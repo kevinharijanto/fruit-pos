@@ -1,0 +1,123 @@
+/* =========================
+datasource db {
+  provider = "postgresql"
+  url      = "file:./dev.db"
+}
+========================= */
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") 
+}
+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+/* =========================
+   Shared Enums
+========================= */
+
+enum Unit {
+  PCS
+  KG
+}
+
+enum StockMode {
+  TRACK   // stock tracked (Have Stock)
+  RESELL  // no stock tracking (Resell)
+}
+
+/* =========================
+   Models
+========================= */
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  whatsapp  String?  @unique
+  orders    Order[]
+  createdAt DateTime @default(now())
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  items     Item[]
+}
+
+model Item {
+  id         String    @id @default(cuid())
+  name       String
+
+  // selling price per unit/kg (Rp)
+  price      Int
+
+  // modal / cost price per unit/kg (Rp)
+  costPrice  Int       @default(0)
+
+  // allow fractional stock for KG
+  stock      Decimal   @default(0)
+
+  // NEW: how the price is defined
+  unit       Unit      @default(PCS)
+
+  // NEW: whether stock is tracked (TRACK) or not (RESELL)
+  stockMode  StockMode @default(TRACK)
+
+  // NEW: optional category
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // back relation to order lines
+  OrderItem  OrderItem[]
+}
+
+model Order {
+  id          String     @id @default(cuid())
+  customerId  String?
+  customer    Customer?  @relation(fields: [customerId], references: [id])
+
+  inProgress  Boolean    @default(true)
+  paidAt      DateTime?
+  deliveredAt DateTime?
+
+  paymentType String?
+  qrisRef     String?
+
+  deliveryNote String?
+
+  subtotal    Int
+  discount    Int        @default(0)
+  total       Int
+
+  items       OrderItem[]
+  createdAt   DateTime   @default(now())
+}
+
+model OrderItem {
+  id      String @id @default(cuid())
+  orderId String
+  itemId  String
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item  Item  @relation(fields: [itemId], references: [id])
+
+  qty   Decimal
+  price Int
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator ts {
+  provider = "prisma-client-js"
+}

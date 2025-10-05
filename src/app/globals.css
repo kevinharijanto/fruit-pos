@@ -1,26 +1,68 @@
+/* Tailwind v4 base */
 @import "tailwindcss";
 
+/* Scan globs */
+@source "./src/app/**/*.{ts,tsx}";
+@source "./src/components/**/*.{ts,tsx}";
+@source "./src/pages/**/*.{ts,tsx}";
+@source "./src/**/*.html";
+@source "./app/**/*.{ts,tsx}";
+@source "./components/**/*.{ts,tsx}";
+@source "./pages/**/*.{ts,tsx}";
+
+/* Theme tokens */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+    "Apple Color Emoji", "Segoe UI Emoji";
+
+  /* Brand green */
+  --color-primary-50:  #f0fdf4;
+  --color-primary-100: #dcfce7;
+  --color-primary-200: #bbf7d0;
+  --color-primary-300: #86efac;
+  --color-primary-600: #16a34a;
+  --color-primary-700: #15803d;
+  --color-primary-800: #166534;
+
+  --color-bg:  #ffffff;
+  --color-ink: #111827;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --color-brand: var(--color-primary-600); /* legacy alias */
+  --color-brand-600: var(--color-primary-600);
+  --color-brand-700: var(--color-primary-700);
+  --color-brand-800: var(--color-primary-800);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html, body { min-height: 100%; }
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* Sticky header helper */
+.sticky-header { position: sticky; top: 0; z-index: 40; }
+
+/* ===== Floating Action Button (FAB) =====
+   Add either class="app-fab" or data-fab to your FAB button.
+*/
+.app-fab { position: fixed; z-index: 30; }
+
+/* Hide FAB whenever any modal sets the modal-open flag */
+html.modal-open .app-fab,
+body.modal-open .app-fab,
+html.modal-open [data-fab],
+body.modal-open [data-fab] {
+  display: none !important;
+}
+
+/* iOS momentum scrolling helper */
+.touch-scroll { -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+
+/* Safe-area helpers */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-top    { padding-top: env(safe-area-inset-top); }
