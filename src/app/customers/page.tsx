@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import SearchButton from "@/components/SearchButton";
 import CustomerModal from "@/components/CustomerModal";
 import CustomerActions from "@/components/CustomerActions";
@@ -28,38 +27,41 @@ export default function CustomersPage() {
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<Customer | null>(null);
 
-  const params = useSearchParams();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   async function load() {
     setLoading(true);
-    const data: Customer[] = await (await fetch("/api/customers")).json();
-    setCustomers(Array.isArray(data) ? data : []);
+    const res = await fetch("/api/customers", { cache: "no-store" });
+    const data: unknown = await res.json();
+    setCustomers(Array.isArray(data) ? (data as Customer[]) : []);
     setLoading(false);
   }
+
   useEffect(() => {
     load();
   }, []);
 
-  // Auto-open from FAB (?new=1)
+  // Auto-open from FAB (?new=1) — without useSearchParams
   useEffect(() => {
-    if (params.get("new") === "1") {
+    // Runs only on client
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("new") === "1") {
       setEdit(null);
       setOpen(true);
-      const url = new URL(window.location.href);
       url.searchParams.delete("new");
       window.history.replaceState({}, "", url.toString());
     }
-  }, [params]);
+  }, []);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return customers;
-    return customers.filter(
-      (c) =>
-        (c.name || "").toLowerCase().includes(q) ||
-        (c.address || "").toLowerCase().includes(q) ||
-        (c.whatsapp || "").includes(q)
+    return customers.filter((c) =>
+      [
+        (c.name || "").toLowerCase(),
+        (c.address || "").toLowerCase(),
+        c.whatsapp || "",
+      ].some((field) => field.includes(q))
     );
   }, [customers, query]);
 
@@ -105,21 +107,23 @@ export default function CustomersPage() {
         <h1 className="text-xl font-semibold">Customers</h1>
 
         <div className="ml-auto flex items-center gap-2">
-          <SearchButton value={query} onChange={setQuery} placeholder="Search customers…" title="Search customers" />
+          <SearchButton
+            value={query}
+            onChange={setQuery}
+            placeholder="Search customers…"
+            title="Search customers"
+          />
 
           {/* Export / Import */}
-          {/* <a
-            href="/api/customers/export"
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm text-sm bg-white hover:bg-gray-50"
-          >
-            Export CSV
-          </a> */}
+          {/* If ESLint complains about internal <a>, keep this comment above the tag: */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
             href="/api/customers/export?simple=1&excel=1"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm text-sm bg-white hover:bg-gray-50"
           >
             Export to Excel
           </a>
+
           <button
             onClick={() => fileRef.current?.click()}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm text-sm bg-white hover:bg-gray-50"
@@ -148,7 +152,7 @@ export default function CustomersPage() {
                        bg-[var(--color-primary-600)] hover:bg-[var(--color-primary-700)] active:bg-[var(--color-primary-800)]
                        focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-[var(--color-primary-300)]"
           >
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
               <path d="M12 5v14M5 12h14" />
             </svg>
             New Customer
@@ -175,7 +179,6 @@ export default function CustomersPage() {
                 <CustomerActions
                   customer={{ id: c.id, name: c.name, whatsapp: c.whatsapp }}
                   onEdit={(cust) => {
-                    // ensure we pass address to the modal:
                     const full = customers.find((x) => x.id === cust.id) || c;
                     setEdit(full);
                     setOpen(true);
