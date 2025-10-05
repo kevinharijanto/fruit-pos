@@ -15,6 +15,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
+generator ts {
+  provider = "prisma-client-js"
+}
+
 /* =========================
    Shared Enums
 ========================= */
@@ -112,12 +116,4 @@ model OrderItem {
 
   qty   Decimal
   price Int
-}
-
-generator client {
-  provider = "prisma-client-js"
-}
-
-generator ts {
-  provider = "prisma-client-js"
 }
