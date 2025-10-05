@@ -1,21 +1,24 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { issueAdminCookie, verifyPin } from '@/lib/auth';
-
+import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
-  const { username, pin } = await req.json();
-  const admin = await prisma.admin.findUnique({ where: { username } });
+  const body = await req.json().catch(() => ({}));
+  const input = String(body?.password || "");
 
-  if (!admin) 
-    return NextResponse.json({ error: 'Invalid user' }, { status: 401 });
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+  if (!ADMIN_PASSWORD || input !== ADMIN_PASSWORD) {
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+  }
 
-  const ok = await verifyPin(pin, admin.hashedPin);
-
-  if (!ok) 
-    return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 });
-  
-  await issueAdminCookie();
-  return NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set({
+    name: "pos_admin",
+    value: "1",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+  });
+  return res;
 }
