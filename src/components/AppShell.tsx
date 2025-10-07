@@ -196,7 +196,8 @@ export default function AppShell({ children }: Props) {
       <div className={!collapsed ? "md:pl-[calc(240px+var(--safe-left))]" : ""}>
         <main
           className={[
-            "mx-auto w-full max-w-6xl px-4 md:px-8 py-6",
+            "mx-auto w-full max-w-6xl px-4 md:px-8",
+            "pt-[calc(var(--topbar-h,56px)+var(--safe-top))] md:pt-[calc(var(--topbar-h,0px)+var(--safe-top))]",
             "overflow-y-auto",
             // dynamic height: full viewport minus any top bar height
             "h-[calc(100dvh-var(--topbar-h,56px)-var(--safe-bottom))] md:h-[calc(100dvh-var(--topbar-h,0px)-var(--safe-bottom))]",
@@ -214,7 +215,7 @@ export default function AppShell({ children }: Props) {
       {open && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div className="absolute left-0 top-0 bottom-0 w-80 max-w-[85vw] bg-white shadow-xl p-4 flex flex-col">
+          <div className="absolute left-[var(--safe-left)] top-[var(--safe-top)] bottom-[var(--safe-bottom)] w-80 max-w-[85vw] bg-white shadow-xl p-4 flex flex-col safe-area-x safe-area-t safe-area-b">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <div className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[var(--color-primary-600)] text-white text-sm font-bold">
