@@ -1,6 +1,7 @@
 {
-  "regions": ["sin1"],
+  "regions": ["sin1"],              
   "functions": {
-    "api/**": { "maxDuration": 10 }
+    "app/**/route.ts": { "maxDuration": 10, "memory": 1024 },
+    "app/**/route.js": { "maxDuration": 10, "memory": 1024 }
   }
 }
