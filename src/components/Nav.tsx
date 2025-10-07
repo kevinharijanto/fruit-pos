@@ -13,8 +13,8 @@ const tabs = [
 export default function Nav() {
   const pathname = usePathname();
   return (
-    <nav className="sticky top-[var(--safe-top)] z-10 bg-white/80 backdrop-blur border-b safe-area-x">
-      <div className="mx-auto max-w-6xl px-4 py-3 flex gap-4">
+    <nav className="sticky top-[var(--topbar-h,56px)] z-10 bg-white/80 backdrop-blur border-b safe-area-x">
+      <div className="mx-auto max-w-6xl px-4 h-12 flex items-center gap-4">
         {tabs.map((t) => {
           const active =
             pathname === t.href ||

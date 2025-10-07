@@ -197,7 +197,8 @@ export default function AppShell({ children }: Props) {
         <main
           className={[
             "mx-auto w-full max-w-6xl px-4 md:px-8",
-            "pt-[calc(var(--topbar-h,56px)+var(--safe-top))] md:pt-[calc(var(--topbar-h,0px)+var(--safe-top))]",
+            "pt-[var(--topbar-h,56px)] md:pt-[var(--topbar-h,0px)]",
+            "pb-6",
             "overflow-y-auto",
             // dynamic height: full viewport minus any top bar height
             "h-[calc(100dvh-var(--topbar-h,56px)-var(--safe-bottom))] md:h-[calc(100dvh-var(--topbar-h,0px)-var(--safe-bottom))]",
@@ -205,6 +206,7 @@ export default function AppShell({ children }: Props) {
               ? "md:[--topbar-h:56px]" // collapsed desktop has a top bar
               : "md:[--topbar-h:0px]",   // sidebar visible: no top bar on md+
             "[--topbar-h:56px]",        // mobile always has top bar
+            "[--tabs-h:48px] md:[--tabs-h:0px]",
           ].join(" ")}
         >
           {children}
