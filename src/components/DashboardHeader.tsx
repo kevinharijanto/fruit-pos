@@ -29,10 +29,10 @@ export default function DashboardHeader({
     <div
       className={[
         // sticky & solid
-        "sticky top-[var(--topbar-h,0px)] z-[60] isolate",
+        "sticky top-[calc(var(--topbar-h,0px)+var(--safe-top))] z-[60] isolate",
         "bg-white border-b shadow-sm",
         // make header full-bleed inside <main> (which has px-4 md:px-8)
-        "-mx-4 md:-mx-8 px-4 md:px-8",
+        "-mx-4 md:-mx-8 px-4 md:px-8 safe-area-x",
       ].join(" ")}
     >
       <div className="py-4">

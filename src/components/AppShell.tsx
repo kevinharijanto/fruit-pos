@@ -96,7 +96,7 @@ export default function AppShell({ children }: Props) {
   return (
     <>
       {/* Mobile top bar (always visible & sticky) */}
-      <div className="md:hidden sticky top-0 z-40 bg-white/80 backdrop-blur border-b">
+      <div className="md:hidden sticky top-[var(--safe-top)] z-40 bg-white/80 backdrop-blur border-b safe-area-x">
         <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
           <button
             aria-label="Open menu"
@@ -119,7 +119,7 @@ export default function AppShell({ children }: Props) {
 
       {/* Collapsed desktop/iPad top bar (sticky) */}
       {collapsed && (
-        <div className="hidden md:block sticky top-0 z-40 bg-white/80 backdrop-blur border-b">
+        <div className="hidden md:block sticky top-[var(--safe-top)] z-40 bg-white/80 backdrop-blur border-b safe-area-x">
           <div className="mx-auto max-w-6xl px-6 py-3 flex items-center justify-between">
             <button
               aria-label="Open menu"
@@ -156,7 +156,7 @@ export default function AppShell({ children }: Props) {
 
       {/* Fixed sidebar on md+ (does NOT scroll away) */}
       {!collapsed && (
-        <aside className="hidden md:flex fixed inset-y-0 left-0 w-[240px] z-30 border-r bg-white">
+        <aside className="hidden md:flex fixed inset-y-0 left-[var(--safe-left)] w-[240px] z-30 border-r bg-white safe-area-t safe-area-b">
           <div className="flex flex-col w-full h-full">
             <div className="px-4 py-5 border-b flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -193,13 +193,13 @@ export default function AppShell({ children }: Props) {
       )}
 
       {/* Main content: becomes the ONLY scroller */}
-      <div className={!collapsed ? "md:pl-[240px]" : ""}>
+      <div className={!collapsed ? "md:pl-[calc(240px+var(--safe-left))]" : ""}>
         <main
           className={[
             "mx-auto w-full max-w-6xl px-4 md:px-8 py-6",
             "overflow-y-auto",
             // dynamic height: full viewport minus any top bar height
-            "h-[calc(100dvh-var(--topbar-h,56px))] md:h-[calc(100dvh-var(--topbar-h,0px))]",
+            "h-[calc(100dvh-var(--topbar-h,56px)-var(--safe-bottom))] md:h-[calc(100dvh-var(--topbar-h,0px)-var(--safe-bottom))]",
             collapsed
               ? "md:[--topbar-h:56px]" // collapsed desktop has a top bar
               : "md:[--topbar-h:0px]",   // sidebar visible: no top bar on md+
