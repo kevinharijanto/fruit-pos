@@ -1,7 +1,7 @@
 // src/app/api/orders/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma, PaymentStatus, DeliveryStatus } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -50,7 +50,8 @@ export async function GET() {
     // Serialize to plain JSON (Decimal -> number, Date -> ISO)
     const data = orders.map((o) => ({
       id: o.id,
-      inProgress: o.inProgress,
+      paymentStatus: o.paymentStatus,
+      deliveryStatus: o.deliveryStatus,
       paidAt: o.paidAt ? o.paidAt.toISOString() : null,
       deliveredAt: o.deliveredAt ? o.deliveredAt.toISOString() : null,
       deliveryNote: o.deliveryNote ?? null,
@@ -105,7 +106,8 @@ export async function POST(req: NextRequest) {
     discount: discIn,
     paymentType,
     deliveryNote,
-    inProgress = true,
+    paymentStatus,
+    deliveryStatus,
     paid = false,
     delivered = false,
   } = body || {};
@@ -170,11 +172,28 @@ export async function POST(req: NextRequest) {
     }
 
     // 5) Create order + nested items (pass Decimal as string to be safe)
+    // Map strings -> Prisma enums (imported enum objects)
+    // Pick enums via direct conditionals (no object lookup)
+    const rawPay  = paymentStatus ?? (paid ? "paid" : "unpaid");
+    const rawShip = deliveryStatus ?? (delivered ? "delivered" : "pending");
+    const payKey  = String(rawPay).toLowerCase().trim() as any;
+    const shipKey = String(rawShip).toLowerCase().trim() as any;
+    const payEnum  =
+      payKey === "paid"      ? PaymentStatus.paid
+    : payKey === "refunded"  ? PaymentStatus.refunded
+    :                          PaymentStatus.unpaid;
+    const shipEnum =
+      shipKey === "delivered" ? DeliveryStatus.delivered
+    : shipKey === "failed"    ? DeliveryStatus.failed
+    :                           DeliveryStatus.pending;
+
+
     const order = await prisma.order.create({
       data: {
-        inProgress: Boolean(inProgress),
-        paidAt: paid ? new Date() : null,
-        deliveredAt: delivered ? new Date() : null,
+        paymentStatus:  payEnum,
+        deliveryStatus: shipEnum,
+        paidAt:        payEnum  === PaymentStatus.paid        ? new Date() : null,
+        deliveredAt:   shipEnum === DeliveryStatus.delivered  ? new Date() : null,
         paymentType: (paymentType as any) ?? null,
         deliveryNote: deliveryNote ?? null,
         subtotal,

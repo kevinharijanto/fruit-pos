@@ -1,19 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+ import { prisma } from "@/lib/prisma";
+ import { PaymentStatus, DeliveryStatus } from "@prisma/client";
 
 export const runtime = "nodejs";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string }}) {
-  const body = await req.json(); // { paid?: boolean, delivered?: boolean, inProgress?: boolean }
+  const body = await req.json(); // { paymentStatus?, deliveryStatus?, paid?, delivered? }
   const data: any = {};
 
-  if (body.paid === true) data.paidAt = new Date();
-  if (body.paid === false) data.paidAt = null;
+  if (typeof body.paymentStatus === 'string') {
+    const map = { unpaid: PaymentStatus.unpaid, paid: PaymentStatus.paid, refunded: PaymentStatus.refunded } as const;
+    data.paymentStatus = map[body.paymentStatus as keyof typeof map];
+    data.paidAt = body.paymentStatus === 'paid' ? new Date() : null;
+  } else if (typeof body.paid === 'boolean') {
+    data.paymentStatus = body.paid ? PaymentStatus.paid : PaymentStatus.unpaid;
+    data.paidAt = body.paid ? new Date() : null;
+  }
 
-  if (body.delivered === true) data.deliveredAt = new Date();
-  if (body.delivered === false) data.deliveredAt = null;
-
-  if (typeof body.inProgress === 'boolean') data.inProgress = body.inProgress;
+  if (typeof body.deliveryStatus === 'string') {
+    const map = { pending: DeliveryStatus.pending, delivered: DeliveryStatus.delivered, failed: DeliveryStatus.failed } as const;
+    data.deliveryStatus = map[body.deliveryStatus as keyof typeof map];
+    data.deliveredAt = body.deliveryStatus === 'delivered' ? new Date() : null;
+  } else if (typeof body.delivered === 'boolean') {
+    data.deliveryStatus = body.delivered ? DeliveryStatus.delivered : DeliveryStatus.pending;
+    data.deliveredAt = body.delivered ? new Date() : null;
+  }
 
   const order = await prisma.order.update({ where: { id: params.id }, data, include: { customer: true, items: { include: { item: true } } } });
   return NextResponse.json(order);

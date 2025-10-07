@@ -1,7 +1,7 @@
 // src/app/api/orders/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma, PaymentStatus, DeliveryStatus } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -53,7 +53,8 @@ export async function PATCH(
     discount: discIn,
     paymentType,
     deliveryNote,
-    inProgress,
+    paymentStatus,
+    deliveryStatus, 
     paid,
     delivered,
   } = body || {};
@@ -76,8 +77,8 @@ export async function PATCH(
         throw new Error("Order not found");
       }
 
-      const deliveredBefore = !!existing.deliveredAt;
-      const paidBefore = !!existing.paidAt;
+      const deliveredBefore = existing.deliveryStatus === "delivered";
+      const paidBefore      = existing.paymentStatus  === "paid";
 
       // Map existing lines by itemId (merge if duplicates)
       const existByItem = new Map<
@@ -142,7 +143,11 @@ export async function PATCH(
 
         // Replace lines to match 'desired'
         // (a) If delivered was true and will become false, restore stock for current lines first.
-        const deliveredAfter = delivered === true ? true : delivered === false ? false : deliveredBefore;
+        // const deliveredAfter = delivered === true ? true : delivered === false ? false : deliveredBefore;
+        const deliveredAfter = 
+          typeof deliveryStatus === "string" 
+            ? deliveryStatus === "delivered" : (delivered === true ? true 
+            : delivered === false ? false : deliveredBefore);
 
         if (deliveredBefore && !deliveredAfter) {
           // return stock for all TRACK items on existing order
@@ -255,23 +260,43 @@ export async function PATCH(
       }
 
       // 5) Status timestamps
-      const setPaidAt =
-        paid === true ? new Date()
-        : paid === false ? null
-        : existing.paidAt;
+      // Resolve final statuses (prefer explicit strings)
+      // Enum maps
+      const PAY = {
+        unpaid:   PaymentStatus.unpaid,
+        paid:     PaymentStatus.paid,
+        refunded: PaymentStatus.refunded,
+      } as const;
+      const SHIP = {
+        pending:   DeliveryStatus.pending,
+        delivered: DeliveryStatus.delivered,
+        failed:    DeliveryStatus.failed,
+      } as const;
 
-      const deliveredAfter =
-        delivered === true ? new Date()
-        : delivered === false ? null
-        : existing.deliveredAt;
+      // resolve final strings first (prefer explicit; else derive from booleans; else keep existing)
+      const finalPayStr  =
+        typeof paymentStatus === 'string'
+          ? (paymentStatus.toLowerCase().trim() as keyof typeof PAY)
+          : (paid === true ? 'paid' : paid === false ? 'unpaid' : (existing.paymentStatus as unknown as keyof typeof PAY));
+      const finalShipStr =
+        typeof deliveryStatus === 'string'
+          ? (deliveryStatus.toLowerCase().trim() as keyof typeof SHIP)
+          : (delivered === true ? 'delivered' : delivered === false ? 'pending' : (existing.deliveryStatus as unknown as keyof typeof SHIP));
+ 
+      const payEnum  = PAY[finalPayStr]  ?? existing.paymentStatus;
+      const shipEnum = SHIP[finalShipStr] ?? existing.deliveryStatus;
+
+      const setPaidAt      = (finalPayStr  === "paid")      ? (existing.paidAt ?? new Date()) : null;
+      const setDeliveredAt = (finalShipStr === "delivered") ? (existing.deliveredAt ?? new Date()) : null;
 
       // 6) Update order record
       await tx.order.update({
         where: { id },
         data: {
-          inProgress: typeof inProgress === "boolean" ? inProgress : existing.inProgress,
-          paidAt: setPaidAt,
-          deliveredAt: deliveredAfter,
+          paymentStatus:  payEnum,
+          deliveryStatus: shipEnum,
+          paidAt:      setPaidAt,
+          deliveredAt: setDeliveredAt,
           paymentType: typeof paymentType === "string" || paymentType === null ? paymentType : existing.paymentType,
           deliveryNote: typeof deliveryNote === "string" ? deliveryNote : existing.deliveryNote,
           discount: newDiscount,

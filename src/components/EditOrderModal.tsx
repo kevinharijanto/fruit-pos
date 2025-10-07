@@ -5,7 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 
 export type OrderForEdit = {
   id?: string;
-  inProgress: boolean;
+  // NEW dual-tag statuses (optional so callers don’t break)
+  paymentStatus?: "unpaid" | "paid" | "refunded";
+  deliveryStatus?: "pending" | "delivered" | "failed";
+  // legacy fields still accepted for inference
+  inProgress?: boolean;
   paidAt?: string | null;
   deliveredAt?: string | null;
   deliveryNote?: string | null;
@@ -145,9 +149,13 @@ export default function EditOrderModal({
   const [paymentType, setPaymentType] = useState<OrderForEdit["paymentType"]>(order.paymentType ?? null);
   const [deliveryNote, setDeliveryNote] = useState(order.deliveryNote ?? "");
   const [discount, setDiscount] = useState<number>(order.discount ?? 0);
-  const [inProgress, setInProgress] = useState(order.inProgress ?? true);
-  const [paid, setPaid] = useState(!!order.paidAt);
-  const [delivered, setDelivered] = useState(!!order.deliveredAt);
+  // NEW: local dual-tag state (infer from provided fields or legacy timestamps)
+  const [paymentStatus, setPaymentStatus] = useState<"unpaid"|"paid"|"refunded">(
+    order.paymentStatus ?? (order.paidAt ? "paid" : "unpaid")
+  );
+  const [deliveryStatus, setDeliveryStatus] = useState<"pending"|"delivered"|"failed">(
+    order.deliveryStatus ?? (order.deliveredAt ? "delivered" : "pending")
+  );
 
   const total = Math.max(subtotal - (discount || 0), 0);
 
@@ -158,9 +166,8 @@ export default function EditOrderModal({
       paymentType: paymentType || undefined,
       deliveryNote: deliveryNote || undefined,
       discount: Number.isFinite(discount) ? Math.max(0, Math.floor(discount)) : undefined,
-      inProgress,
-      paid,
-      delivered,
+      paymentStatus,
+      deliveryStatus,
     };
 
     let res: Response;
@@ -337,25 +344,46 @@ export default function EditOrderModal({
             <div className="text-base font-medium">Notes</div>
             <input className="border rounded p-4 w-full text-base" placeholder="Delivery notes (optional)" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} />
 
-            <div className="grid grid-cols-2 gap-4">
-              <label className="inline-flex items-center gap-2 text-base">
-                <input type="checkbox" checked={inProgress} onChange={(e) => setInProgress(e.target.checked)} />
-                In Progress
-              </label>
-              <label className="inline-flex items-center gap-2 text-base">
-                <input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
-                Paid
-              </label>
-              <label className="inline-flex items-center gap-2 text-base">
-                <input type="checkbox" checked={delivered} onChange={(e) => setDelivered(e.target.checked)} />
-                Delivered
-              </label>
-
-              <div className="flex items-center gap-3">
-                <span className="text-base">Discount</span>
-                <input className="border rounded p-3 w-32 text-base" type="number" min={0} value={discount} onChange={(e) => setDiscount(Number(e.target.value || 0))} />
-              </div>
+          {/* NEW: Dual-tag status controls */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <div className="text-base font-medium">Payment status</div>
+              <select
+                className="border rounded p-4 w-full text-base"
+                value={paymentStatus}
+                onChange={(e) => setPaymentStatus(e.target.value as any)}
+              >
+                <option value="unpaid">Unpaid</option>
+                <option value="paid">Paid</option>
+                <option value="refunded">Refunded</option>
+              </select>
             </div>
+            <div className="space-y-2">
+              <div className="text-base font-medium">Delivery status</div>
+              <select
+                className="border rounded p-4 w-full text-base"
+                value={deliveryStatus}
+                onChange={(e) => setDeliveryStatus(e.target.value as any)}
+              >
+                <option value="pending">Pending</option>
+                <option value="delivered">Delivered</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Discount */}
+          <div className="flex items-center gap-3">
+            <span className="text-base">Discount</span>
+            <input
+              className="border rounded p-3 w-32 text-base"
+              type="number"
+              min={0}
+              value={discount}
+              onChange={(e) => setDiscount(Number(e.target.value || 0))}
+            />
+          </div>
+
           </section>
         </div>
 

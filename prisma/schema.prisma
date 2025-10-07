@@ -33,6 +33,18 @@ enum StockMode {
   RESELL  // no stock tracking (Resell)
 }
 
+enum PaymentStatus  { 
+  unpaid 
+  paid 
+  refunded 
+}
+
+enum DeliveryStatus { 
+  pending 
+  delivered 
+  failed 
+}
+
 /* =========================
    Models
 ========================= */
@@ -89,7 +101,9 @@ model Order {
   customerId  String?
   customer    Customer?  @relation(fields: [customerId], references: [id])
 
-  inProgress  Boolean    @default(true)
+  paymentStatus  PaymentStatus  @default(unpaid)
+  deliveryStatus DeliveryStatus @default(pending)
+
   paidAt      DateTime?
   deliveredAt DateTime?
 

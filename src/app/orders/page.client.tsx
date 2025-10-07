@@ -11,7 +11,8 @@ import EditOrderModal from "@/components/EditOrderModal";
 ========================= */
 type Order = {
   id: string;
-  inProgress: boolean;
+  paymentStatus: 'unpaid'|'paid'|'refunded';
+  deliveryStatus: 'pending'|'delivered'|'failed';
   paidAt?: string | null;
   deliveredAt?: string | null;
   total: number;
@@ -117,8 +118,8 @@ const STATUS_OPTIONS: StatusFilter[] = [
 
 // Map current flags to the 4 requested statuses
 const statusText = (o: Order): Exclude<StatusFilter, "ALL"> => {
-  const paid = !!o.paidAt;
-  const del = !!o.deliveredAt;
+  const paid = o.paymentStatus === 'paid';
+  const del  = o.deliveryStatus === 'delivered';
   if (paid && del) return "Done";
   if (del && !paid) return "Delivered but Not Paid";
   if (!del && paid) return "Paid but Not Delivered";
@@ -178,9 +179,12 @@ const btnIcon =
 ========================= */
 function StatusBadge({ s }: { s: Exclude<StatusFilter, "ALL"> }) {
   const map: Record<Exclude<StatusFilter, "ALL">, string> = {
+    // not paid + not delivered
     "In Progress": "bg-yellow-100 text-yellow-800 border border-yellow-200",
-    "Delivered but Not Paid": "bg-blue-100 text-blue-800 border border-blue-200",
-    "Paid but Not Delivered": "bg-orange-100 text-orange-800 border border-orange-200",
+    // delivered + not paid
+    "Delivered but Not Paid": "bg-orange-100 text-orange-800 border border-orange-200",
+    // paid + not delivered
+    "Paid but Not Delivered": "bg-blue-100 text-blue-800 border border-blue-200",
     Done: "bg-green-100 text-green-800 border border-green-200",
   };
   return <span className={`px-2 py-1 rounded text-xs whitespace-nowrap ${map[s]}`}>{s}</span>;
@@ -202,6 +206,8 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<StatusFilter>("ALL");
+  const [payFilter, setPayFilter] = useState<'all'|'unpaid'|'paid'|'refunded'>('all');
+  const [shipFilter, setShipFilter] = useState<'all'|'pending'|'delivered'|'failed'>('all');
   const [allItems, setAllItems] = useState<ItemRef[]>([]);
   const [view, setView] = useState<"cards" | "list">(() => {
     if (typeof window === "undefined") return "cards";
@@ -255,8 +261,11 @@ export default function OrdersPage() {
   const filtered = useMemo(() => {
     let list = orders;
     if (waFilter) list = list.filter((o) => (o.customer?.whatsapp || "").includes(waFilter));
-    return list.filter((o) => (filter === "ALL" ? true : statusText(o) === filter));
-  }, [orders, filter, waFilter]);
+    list = list.filter((o) => (filter === "ALL" ? true : statusText(o) === filter));
+    if (payFilter !== 'all')  list = list.filter(o => o.paymentStatus  === payFilter);
+    if (shipFilter !== 'all') list = list.filter(o => o.deliveryStatus === shipFilter);
+    return list;
+  }, [orders, filter, waFilter, payFilter, shipFilter]);
 
   function openCreate() {
     setModalMode("create");
@@ -277,7 +286,10 @@ export default function OrdersPage() {
     setModalMode("edit");
     setModalOrder({
       id: o.id,
-      inProgress: o.inProgress,
+      // send dual tags so the modal uses them directly
+      paymentStatus: o.paymentStatus,        // 'unpaid' | 'paid' | 'refunded'
+      deliveryStatus: o.deliveryStatus,      // 'pending' | 'delivered' | 'failed'
+      // keep timestamps for display/inference safety
       paidAt: o.paidAt ?? null,
       deliveredAt: o.deliveredAt ?? null,
       deliveryNote: o.deliveryNote ?? "",
@@ -359,7 +371,31 @@ export default function OrdersPage() {
             ))}
           </select>
 
+          {/* NEW: Payment & Delivery filters */}
+          <select
+            className="border rounded p-2 text-sm"
+            value={payFilter}
+            onChange={(e) => setPayFilter(e.target.value as any)}
+            title="Payment status"
+          >
+            <option value="all">Pay: All</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="paid">Paid</option>
+            <option value="refunded">Refunded</option>
+          </select>
+          <select
+            className="border rounded p-2 text-sm"
+            value={shipFilter}
+            onChange={(e) => setShipFilter(e.target.value as any)}
+            title="Delivery status"
+          >
+            <option value="all">Delivery: All</option>
+            <option value="pending">Pending</option>
+            <option value="delivered">Delivered</option>
+            <option value="failed">Failed</option>
+          </select>
           {/* New order button */}
+
           <button
             onClick={openCreate}
             className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white
