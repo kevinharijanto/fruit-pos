@@ -37,11 +37,24 @@
 }
 
 html, body { min-height: 100%; }
+
 body {
   font-family: var(--font-sans);
   background: var(--color-bg);
   color: var(--color-ink);
   -webkit-tap-highlight-color: transparent;
+  /* No global safe-area padding here to avoid double spacing on desktop/Android */
+}
+
+/* Apply safe-area only when running as a PWA on iOS/Android */
+@media (display-mode: standalone) {
+  body {
+    padding:
+      env(safe-area-inset-top)
+      env(safe-area-inset-right)
+      env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+  }
 }
 
 /* Sticky header helper */
@@ -63,6 +76,6 @@ body.modal-open [data-fab] {
 /* iOS momentum scrolling helper */
 .touch-scroll { -webkit-overflow-scrolling: touch; touch-action: pan-y; }
 
-/* Safe-area helpers */
+/* Optional safe-area utilities (use only if you don't rely on the global @media block) */
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 .safe-top    { padding-top: env(safe-area-inset-top); }
