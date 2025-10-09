@@ -17,7 +17,7 @@ function toNumber(v: unknown, fallback = 0): number {
 
 function qtyForUnit(rawQty: unknown, unit: "PCS" | "KG"): number {
   let q = toNumber(rawQty, 0);
-  if (unit === "KG") return Math.max(0, Math.round(q * 10) / 10); // 0.1kg step
+  if (unit === "KG") return Math.max(0, Math.round(q * 100) / 100); // 0.01kg step
   return Math.max(0, Math.floor(q)); // integer PCS
 }
 
