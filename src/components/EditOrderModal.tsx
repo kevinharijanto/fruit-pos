@@ -93,7 +93,7 @@ export default function EditOrderModal({
     const u = itemsById[itemId]?.unit || "PCS";
     if (u === "KG") {
       // one decimal place, e.g. 0.1 kg steps
-      return Math.max(0, Math.round(q * 100) / 100);
+      return Math.max(0, Math.round(q * 1000) / 1000);
     }
     // PCS → integers
     return Math.max(0, Math.floor(q));
@@ -108,7 +108,7 @@ export default function EditOrderModal({
       prev.map((l) => {
         if (l.itemId !== itemId) return l;
         const base = itemsById[itemId];
-        const step = (base?.unit === "KG") ? 0.01 : 1;
+        const step = (base?.unit === "KG") ? 0.001 : 1;
         const reserved = origQty.get(itemId) || 0;
         const available = (base?.stock ?? 0) + reserved - l.qty;
         if (base?.unit !== "KG" && available <= 0) return l; // only guard stock for tracked PCS; KG items are RESELL anyway
@@ -124,7 +124,7 @@ export default function EditOrderModal({
       prev.map((l) => {
         if (l.itemId !== itemId) return l;
         const base = itemsById[itemId];
-        const step = (base?.unit === "KG") ? 0.01 : 1;
+        const step = (base?.unit === "KG") ? 0.001 : 1;
         const next = roundByUnit(itemId, l.qty - step);
         return { ...l, qty: next };
       })
@@ -142,7 +142,7 @@ export default function EditOrderModal({
     if (exists) inc(itemId);
     else setLines((prev) => [...prev, { itemId, name: it.name, qty: it.unit === "KG" ? 0.01 : 1, price: it.price }]);
   }
-
+//
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.qty * l.price, 0), [lines]);
 
   // Meta
@@ -297,7 +297,7 @@ export default function EditOrderModal({
               {lines.length === 0 && <li className="p-4 text-base text-gray-500">No items.</li>}
               {lines.map((l) => {
                 const u = itemsById[l.itemId]?.unit || "PCS";
-                const step = u === "KG" ? 0.01 : 1;
+                const step = u === "KG" ? 0.001 : 1;
                 return (
                   <li key={l.itemId} className="p-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
                     <div className="min-w-0">
