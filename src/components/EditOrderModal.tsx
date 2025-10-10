@@ -142,7 +142,7 @@ export default function EditOrderModal({
     if (exists) inc(itemId);
     else setLines((prev) => [...prev, { itemId, name: it.name, qty: it.unit === "KG" ? 0.01 : 1, price: it.price }]);
   }
-
+//
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.qty * l.price, 0), [lines]);
 
   // Meta
