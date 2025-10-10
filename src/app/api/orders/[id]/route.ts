@@ -51,6 +51,7 @@ export async function PATCH(
     customer,
     items,                   // optional array to replace lines
     discount: discIn,
+    deliveryFee: feeIn,
     paymentType,
     deliveryNote,
     paymentStatus,
@@ -233,7 +234,10 @@ export async function PATCH(
       // discount: keep if not provided
       const newDiscount =
         typeof discIn === "number" ? Math.max(0, Math.floor(discIn)) : existing.discount;
-      const total = Math.max(0, subtotal - newDiscount);
+      // deliveryFee (ongkir): keep if not provided
+      const newDelivery =
+        typeof feeIn === "number" ? Math.max(0, Math.floor(feeIn)) : existing.deliveryFee ?? 0;
+      const total = Math.max(0, subtotal - newDiscount + newDelivery);
 
       // 4) Customer relation update (optional)
       let customerUpdate: any = undefined;
@@ -300,6 +304,7 @@ export async function PATCH(
           paymentType: typeof paymentType === "string" || paymentType === null ? paymentType : existing.paymentType,
           deliveryNote: typeof deliveryNote === "string" ? deliveryNote : existing.deliveryNote,
           discount: newDiscount,
+          deliveryFee: newDelivery,
           subtotal,
           total,
           ...(customerUpdate ? { customer: customerUpdate } : {}),

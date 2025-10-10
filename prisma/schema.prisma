@@ -114,6 +114,7 @@ model Order {
 
   subtotal    Int
   discount    Int        @default(0)
+  deliveryFee Int        @default(0)
   total       Int
 
   items       OrderItem[]
