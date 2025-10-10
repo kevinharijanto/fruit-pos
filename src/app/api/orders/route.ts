@@ -21,7 +21,7 @@ function qtyForUnit(rawQty: unknown, unit: "PCS" | "KG"): number {
   let q = toNumber(rawQty, 0);
   if (unit === "KG") {
     // keep one decimal place (0.1 kg steps); clamp >= 0
-    q = Math.max(0, Math.round(q * 100) / 100);
+    q = Math.max(0, Math.round(q * 1000) / 1000);
   } else {
     // PCS: integer only
     q = Math.max(0, Math.floor(q));
