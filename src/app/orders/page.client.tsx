@@ -16,6 +16,8 @@ type Order = {
   paidAt?: string | null;
   deliveredAt?: string | null;
   total: number;
+  discount: number;
+  deliveryFee: number;
   createdAt: string;
   deliveryNote?: string | null;
   paymentType?: "CASH" | "TRANSFER" | "QRIS" | null;
@@ -34,76 +36,82 @@ Transfer ke Rekening
 BCA 8705484640
 An Alfonsa Jeanny
 
-Mohon lampirkan bukti transfer juga, Terima Kasih!
+Mohon lampirkan bukti transfer juga
+🌸 Thank u 🌸`;
 
-🌸thank u🌸`;
-
-
-function pad2(n: number) {
-  return n < 10 ? `0${n}` : `${n}`;
-}
-function formatYMDHMS(dateStr: string) {
-  const d = new Date(dateStr);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(
-    d.getMinutes()
-  )}:${pad2(d.getSeconds())}`;
-}
 function idr(n: number) {
-  return `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+  return `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
 }
-function rpad(s: string, n: number) {
-  return s.length >= n ? s.slice(0, n) : s + " ".repeat(n - s.length);
+function pad2(n: number) { return n < 10 ? `0${n}` : `${n}`; }
+
+// "11 October 2025" (no time, per your preferred screenshot)
+function formatDateDayMonthYear(dateStr: string) {
+  const d = new Date(dateStr);
+  const day = pad2(d.getDate());
+  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  return `${day} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
-function lpad(s: string, n: number) {
-  return s.length >= n ? s.slice(-n) : " ".repeat(n - s.length) + s;
+
+// prevent Markdown conflicts inside names by swapping *, _ with lookalikes
+function mdSafe(text: string) {
+  return (text || "-").replace(/\*/g, "＊").replace(/_/g, "＿");
+}
+
+// word-wrap without breaking words
+function wrapName(name: string, width: number): string[] {
+  const words = (name || "-").split(/\s+/);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    if (!cur) { cur = w; continue; }
+    if ((cur + " " + w).length <= width) cur += " " + w;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }
 
 export function buildWhatsAppMessage(o: {
   createdAt: string;
   items: { qty: number; price: number; item: { name: string } }[];
   total: number;
+  discount: number;
+  deliveryFee: number;
 }) {
-  const date = formatYMDHMS(o.createdAt);
+  const date = formatDateDayMonthYear(o.createdAt);
 
-  // (name, qty, unit-price) — no per-line subtotal
-  const rows = o.items.map((li) => {
-    const qtyStr = `${li.qty}x`;
-    const priceStr = idr(li.price);
-    return { name: li.item.name || "-", qtyStr, priceStr };
-  });
+  // Subtotal like API (sum of rounded line totals)
+  const subtotal = o.items.reduce((s, li) => s + Math.round(Number(li.qty) * li.price), 0);
 
-  // Dynamic widths with sensible bounds to look nice on phones
-  const nameW  = Math.min(22, Math.max(12, ...rows.map((r) => r.name.length)));
-  const qtyW   = Math.max(2,  ...rows.map((r) => r.qtyStr.length));  // e.g. "10x"
-  const priceW = Math.max(10, ...rows.map((r) => r.priceStr.length)); // e.g. "Rp 55.000"
+  // Layout constants (tuned for WhatsApp on small screens)
+  const NAME_W = 22;
+  const SEP = "--------------------";
 
-  const sep = "-".repeat(nameW + 2 + qtyW + 2 + priceW);
+  const rows: string[] = [];
+for (const li of o.items) {
+  const name = li.item?.name ? li.item.name : "-";
+  // one full line for the (bold) name — no wrapping/splitting
+  rows.push(`*${mdSafe(name)}*`);
+  // next line: qty + italic unit price
+  rows.push(`${li.qty}x   _${idr(li.price)}_`);
+}
 
-  // Two spaces between columns, right-align qty and price
-  const lines = rows.map(
-    (r) => `${rpad(r.name, nameW)}  ${lpad(r.qtyStr, qtyW)}  ${lpad(r.priceStr, priceW)}`
-  );
+  const parts: string[] = [
+    `Terima Kasih sudah belanja di ${STORE_NAME}!`,
+    "",
+    `Tanggal: ${date}`,
+    SEP,
+    ...rows,
+    SEP,
+    `Subtotal: ${idr(subtotal)}`,
+    SEP,
+  ];
 
-  const totalQty = o.items.reduce((s, li) => s + li.qty, 0);
-  const totalStr = idr(o.total);
+  if ((o.discount || 0) > 0) parts.push(`Diskon: -${idr(o.discount)}`);
+  if ((o.deliveryFee || 0) > 0) parts.push(`Ongkir: +${idr(o.deliveryFee)}`);
+  parts.push(`Total: ${idr(o.total)}`, "", PAYMENT_INSTRUCTION);
 
-  // Keep a code block so WhatsApp renders monospaced columns
-  const FENCE = "```";
-  const receiptBlock =
-`${FENCE}
-Tanggal: ${date}
-${sep}
-${lines.join("\n")}
-${sep}
-Total Qty: ${totalQty}
-Total: ${totalStr}
-${FENCE}`;
-
-  return `Terima Kasih sudah belanja di Jjenstore!
-
-${receiptBlock}
-
-${PAYMENT_INSTRUCTION}`;
+  return parts.join("\n");
 }
 
 
@@ -276,6 +284,7 @@ export default function OrdersPage() {
       deliveryNote: "",
       paymentType: null,
       discount: 0,
+      deliveryFee: 0,
       customer: { name: "", whatsapp: "", address: "" },
       items: [],
     });
@@ -294,7 +303,8 @@ export default function OrdersPage() {
       deliveredAt: o.deliveredAt ?? null,
       deliveryNote: o.deliveryNote ?? "",
       paymentType: (o.paymentType ?? null) as any,
-      discount: 0,
+      discount: o.discount ?? 0,
+      deliveryFee: o.deliveryFee ?? 0,
       customer: o.customer ?? {},
       items: o.items.map((l) => ({
         itemId: l.itemId,

@@ -15,6 +15,7 @@ export type OrderForEdit = {
   deliveryNote?: string | null;
   paymentType?: "CASH" | "TRANSFER" | "QRIS" | null;
   discount?: number;
+  deliveryFee?: number;
   customer?: { name?: string | null; whatsapp?: string | null; address?: string | null } | null;
   items: { itemId: string; qty: number; price: number; item: { name: string } }[];
 };
@@ -149,6 +150,7 @@ export default function EditOrderModal({
   const [paymentType, setPaymentType] = useState<OrderForEdit["paymentType"]>(order.paymentType ?? null);
   const [deliveryNote, setDeliveryNote] = useState(order.deliveryNote ?? "");
   const [discount, setDiscount] = useState<number>(order.discount ?? 0);
+  const [deliveryFee, setDeliveryFee] = useState<number>(order.deliveryFee ?? 0);
   // NEW: local dual-tag state (infer from provided fields or legacy timestamps)
   const [paymentStatus, setPaymentStatus] = useState<"unpaid"|"paid"|"refunded">(
     order.paymentStatus ?? (order.paidAt ? "paid" : "unpaid")
@@ -157,7 +159,7 @@ export default function EditOrderModal({
     order.deliveryStatus ?? (order.deliveredAt ? "delivered" : "pending")
   );
 
-  const total = Math.max(subtotal - (discount || 0), 0);
+  const total = Math.max(subtotal - (discount || 0) + (deliveryFee || 0), 0);
 
   async function save() {
     const payload = {
@@ -166,6 +168,7 @@ export default function EditOrderModal({
       paymentType: paymentType || undefined,
       deliveryNote: deliveryNote || undefined,
       discount: Number.isFinite(discount) ? Math.max(0, Math.floor(discount)) : undefined,
+      deliveryFee: Number.isFinite(deliveryFee) ? Math.max(0, Math.floor(deliveryFee)) : undefined,
       paymentStatus,
       deliveryStatus,
     };
@@ -274,6 +277,11 @@ export default function EditOrderModal({
               <div className="text-sm text-gray-600">
                 Subtotal: <span className="font-semibold">Rp {subtotal.toLocaleString("id-ID")}</span>
               </div>
+              <div className="text-right text-sm text-gray-700 leading-5">
+                <div>Subtotal: <span className="font-semibold">Rp {subtotal.toLocaleString("id-ID")}</span></div>
+                {discount ? <div>Discount: −Rp {discount.toLocaleString("id-ID")}</div> : null}
+                {deliveryFee ? <div>Ongkir: +Rp {deliveryFee.toLocaleString("id-ID")}</div> : null}
+              </div>
             </div>
 
             {/* Search to add */}
@@ -381,6 +389,18 @@ export default function EditOrderModal({
               min={0}
               value={discount}
               onChange={(e) => setDiscount(Number(e.target.value || 0))}
+            />
+          </div>
+
+          {/* Delivery Fee (Ongkir) */}
+          <div className="flex items-center gap-3">
+            <span className="text-base">Delivery Fee (Ongkir)</span>
+            <input
+              className="border rounded p-3 w-32 text-base"
+              type="number"
+              min={0}
+              value={deliveryFee}
+              onChange={(e) => setDeliveryFee(Number(e.target.value || 0))}
             />
           </div>
 

@@ -58,6 +58,7 @@ export async function GET() {
       paymentType: (o.paymentType ?? null) as "CASH" | "TRANSFER" | "QRIS" | null,
       subtotal: o.subtotal,
       discount: o.discount,
+      deliveryFee: o.deliveryFee,
       total: o.total,
       createdAt: o.createdAt.toISOString(),
       customer: o.customer
@@ -104,6 +105,7 @@ export async function POST(req: NextRequest) {
     customer,
     items = [],
     discount: discIn,
+    deliveryFee: feeIn,
     paymentType,
     deliveryNote,
     paymentStatus,
@@ -142,7 +144,8 @@ export async function POST(req: NextRequest) {
     // 3) Totals (money stays integer)
     const subtotal = lines.reduce((s, l) => s + Math.round(Number(l.qty) * l.price), 0);
     const discount = Math.max(0, Math.floor(toNumber(discIn, 0)));
-    const total = Math.max(0, subtotal - discount);
+    const deliveryFee = Math.max(0, Math.floor(toNumber(feeIn, 0)));
+    const total = Math.max(0, subtotal - discount + deliveryFee);
 
     // 4) Customer relation (connect by WA if exists)
     let customerRel: Prisma.OrderCreateInput["customer"] | undefined;
@@ -198,6 +201,7 @@ export async function POST(req: NextRequest) {
         deliveryNote: deliveryNote ?? null,
         subtotal,
         discount,
+        deliveryFee,
         total,
         customer: customerRel,
         items: {
