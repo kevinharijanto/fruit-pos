@@ -27,7 +27,7 @@ type Order = {
 
 type ItemRef = { id: string; name: string; price: number; stock: number; unit?: "PCS" | "KG" };
 
-type StatusFilter = "ALL" | "In Progress" | "Delivered but Not Paid" | "Paid but Not Delivered" | "Done";
+type StatusFilter = "All" | "Unfinished" | "Done";
 
 const STORE_NAME = "Jjenstore";
 
@@ -117,10 +117,8 @@ for (const li of o.items) {
 
 
 const STATUS_OPTIONS: StatusFilter[] = [
-  "ALL",
-  "In Progress",
-  "Delivered but Not Paid",
-  "Paid but Not Delivered",
+  "All",
+  "Unfinished",
   "Done",
 ];
 
@@ -213,10 +211,17 @@ function asNumber(v: any): number {
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<StatusFilter>("ALL");
+ const [filter, setFilter] = useState<StatusFilter>(() => {
+   if (typeof window === "undefined") return "Unfinished";
+   return (localStorage.getItem("orders.filter") as StatusFilter) || "Unfinished";
+ });
+ useEffect(() => {
+   if (typeof window !== "undefined") localStorage.setItem("orders.filter", filter);
+ }, [filter])
   const [payFilter, setPayFilter] = useState<'all'|'unpaid'|'paid'|'refunded'>('all');
   const [shipFilter, setShipFilter] = useState<'all'|'pending'|'delivered'|'failed'>('all');
-  const [allItems, setAllItems] = useState<ItemRef[]>([]);
+  const [allItems, setAllItems] =  useState("");
+  const [customerQ, setCustomerQ] = useState("");
   const [view, setView] = useState<"cards" | "list">(() => {
     if (typeof window === "undefined") return "cards";
     return (localStorage.getItem("orders.view") as "cards" | "list") || "cards";
@@ -269,11 +274,27 @@ export default function OrdersPage() {
   const filtered = useMemo(() => {
     let list = orders;
     if (waFilter) list = list.filter((o) => (o.customer?.whatsapp || "").includes(waFilter));
-    list = list.filter((o) => (filter === "ALL" ? true : statusText(o) === filter));
+    if (customerQ.trim()) {
+      const q = customerQ.trim().toLowerCase();
+      list = list.filter((o) => {
+        const n = (o.customer?.name || "").toLowerCase();
+        const p = (o.customer?.whatsapp || "").toLowerCase();
+        const a = (o.customer?.address || "").toLowerCase();
+        return n.includes(q) || p.includes(q) || a.includes(q);
+      });
+    }
+   list = list.filter((o) => {
+     if (filter === "ALL") return true;
+     const paid = o.paymentStatus === "paid";
+     const delivered = o.deliveryStatus === "delivered";
+     if (filter === "Unfinished") return !(paid && delivered); // anything not fully done
+     if (filter === "Done") return paid && delivered;
+     return true;
+   });
     if (payFilter !== 'all')  list = list.filter(o => o.paymentStatus  === payFilter);
     if (shipFilter !== 'all') list = list.filter(o => o.deliveryStatus === shipFilter);
     return list;
-  }, [orders, filter, waFilter, payFilter, shipFilter]);
+  }, [orders, filter, waFilter, payFilter, shipFilter, customerQ]);
 
   function openCreate() {
     setModalMode("create");
@@ -344,6 +365,14 @@ export default function OrdersPage() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Customer filter */}
+          <input
+            className="border rounded p-2 text-sm w-44"
+            placeholder="Filter customer…"
+            value={customerQ}
+            onChange={(e) => setCustomerQ(e.target.value)}
+            title="Filter by name / phone / address"
+          />
           {/* View toggle */}
           <div className="inline-flex rounded-xl border bg-white shadow-sm overflow-hidden">
             <button
