@@ -220,7 +220,8 @@ export default function OrdersPage() {
  }, [filter])
   const [payFilter, setPayFilter] = useState<'all'|'unpaid'|'paid'|'refunded'>('all');
   const [shipFilter, setShipFilter] = useState<'all'|'pending'|'delivered'|'failed'>('all');
-  const [allItems, setAllItems] = useState<ItemRef[]>([]);
+  const [allItems, setAllItems] =  useState("");
+  const [customerQ, setCustomerQ] = useState("");
   const [view, setView] = useState<"cards" | "list">(() => {
     if (typeof window === "undefined") return "cards";
     return (localStorage.getItem("orders.view") as "cards" | "list") || "cards";
@@ -273,6 +274,15 @@ export default function OrdersPage() {
   const filtered = useMemo(() => {
     let list = orders;
     if (waFilter) list = list.filter((o) => (o.customer?.whatsapp || "").includes(waFilter));
+    if (customerQ.trim()) {
+      const q = customerQ.trim().toLowerCase();
+      list = list.filter((o) => {
+        const n = (o.customer?.name || "").toLowerCase();
+        const p = (o.customer?.whatsapp || "").toLowerCase();
+        const a = (o.customer?.address || "").toLowerCase();
+        return n.includes(q) || p.includes(q) || a.includes(q);
+      });
+    }
    list = list.filter((o) => {
      if (filter === "ALL") return true;
      const paid = o.paymentStatus === "paid";
@@ -284,7 +294,7 @@ export default function OrdersPage() {
     if (payFilter !== 'all')  list = list.filter(o => o.paymentStatus  === payFilter);
     if (shipFilter !== 'all') list = list.filter(o => o.deliveryStatus === shipFilter);
     return list;
-  }, [orders, filter, waFilter, payFilter, shipFilter]);
+  }, [orders, filter, waFilter, payFilter, shipFilter, customerQ]);
 
   function openCreate() {
     setModalMode("create");
@@ -355,6 +365,14 @@ export default function OrdersPage() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          {/* Customer filter */}
+          <input
+            className="border rounded p-2 text-sm w-44"
+            placeholder="Filter customer…"
+            value={customerQ}
+            onChange={(e) => setCustomerQ(e.target.value)}
+            title="Filter by name / phone / address"
+          />
           {/* View toggle */}
           <div className="inline-flex rounded-xl border bg-white shadow-sm overflow-hidden">
             <button
