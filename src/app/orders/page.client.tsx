@@ -27,7 +27,7 @@ type Order = {
 
 type ItemRef = { id: string; name: string; price: number; stock: number; unit?: "PCS" | "KG" };
 
-type StatusFilter = "ALL" | "In Progress" | "Delivered but Not Paid" | "Paid but Not Delivered" | "Done";
+type StatusFilter = "All" | "Unfinished" | "Done";
 
 const STORE_NAME = "Jjenstore";
 
@@ -117,10 +117,8 @@ for (const li of o.items) {
 
 
 const STATUS_OPTIONS: StatusFilter[] = [
-  "ALL",
-  "In Progress",
-  "Delivered but Not Paid",
-  "Paid but Not Delivered",
+  "All",
+  "Unfinished",
   "Done",
 ];
 
@@ -213,7 +211,13 @@ function asNumber(v: any): number {
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<StatusFilter>("ALL");
+ const [filter, setFilter] = useState<StatusFilter>(() => {
+   if (typeof window === "undefined") return "Unfinished";
+   return (localStorage.getItem("orders.filter") as StatusFilter) || "Unfinished";
+ });
+ useEffect(() => {
+   if (typeof window !== "undefined") localStorage.setItem("orders.filter", filter);
+ }, [filter])
   const [payFilter, setPayFilter] = useState<'all'|'unpaid'|'paid'|'refunded'>('all');
   const [shipFilter, setShipFilter] = useState<'all'|'pending'|'delivered'|'failed'>('all');
   const [allItems, setAllItems] = useState<ItemRef[]>([]);
@@ -269,7 +273,14 @@ export default function OrdersPage() {
   const filtered = useMemo(() => {
     let list = orders;
     if (waFilter) list = list.filter((o) => (o.customer?.whatsapp || "").includes(waFilter));
-    list = list.filter((o) => (filter === "ALL" ? true : statusText(o) === filter));
+   list = list.filter((o) => {
+     if (filter === "ALL") return true;
+     const paid = o.paymentStatus === "paid";
+     const delivered = o.deliveryStatus === "delivered";
+     if (filter === "Unfinished") return !(paid && delivered); // anything not fully done
+     if (filter === "Done") return paid && delivered;
+     return true;
+   });
     if (payFilter !== 'all')  list = list.filter(o => o.paymentStatus  === payFilter);
     if (shipFilter !== 'all') list = list.filter(o => o.deliveryStatus === shipFilter);
     return list;
