@@ -1,4 +1,4 @@
-// src/app/orders/page.tsx
+// src/app/orders/page.client.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,8 +11,8 @@ import EditOrderModal from "@/components/EditOrderModal";
 ========================= */
 type Order = {
   id: string;
-  paymentStatus: 'unpaid'|'paid'|'refunded';
-  deliveryStatus: 'pending'|'delivered'|'failed';
+  paymentStatus: "unpaid" | "paid" | "refunded";
+  deliveryStatus: "pending" | "delivered" | "failed";
   paidAt?: string | null;
   deliveredAt?: string | null;
   total: number;
@@ -29,6 +29,9 @@ type ItemRef = { id: string; name: string; price: number; stock: number; unit?: 
 
 type StatusFilter = "All" | "Unfinished" | "Done";
 
+// badges we show on each order card/row
+type BadgeStatus = "In Progress" | "Delivered but Not Paid" | "Paid but Not Delivered" | "Done";
+
 const STORE_NAME = "Jjenstore";
 
 const PAYMENT_INSTRUCTION = `Lakukan pembayaran dengan cara
@@ -42,33 +45,24 @@ Mohon lampirkan bukti transfer juga
 function idr(n: number) {
   return `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
 }
-function pad2(n: number) { return n < 10 ? `0${n}` : `${n}`; }
+function pad2(n: number) {
+  return n < 10 ? `0${n}` : `${n}`;
+}
 
-// "11 October 2025" (no time, per your preferred screenshot)
+// "11 October 2025"
 function formatDateDayMonthYear(dateStr: string) {
   const d = new Date(dateStr);
   const day = pad2(d.getDate());
-  const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const months = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December",
+  ];
   return `${day} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-// prevent Markdown conflicts inside names by swapping *, _ with lookalikes
+// prevent Markdown conflicts inside names by swapping *, _
 function mdSafe(text: string) {
   return (text || "-").replace(/\*/g, "＊").replace(/_/g, "＿");
-}
-
-// word-wrap without breaking words
-function wrapName(name: string, width: number): string[] {
-  const words = (name || "-").split(/\s+/);
-  const lines: string[] = [];
-  let cur = "";
-  for (const w of words) {
-    if (!cur) { cur = w; continue; }
-    if ((cur + " " + w).length <= width) cur += " " + w;
-    else { lines.push(cur); cur = w; }
-  }
-  if (cur) lines.push(cur);
-  return lines;
 }
 
 export function buildWhatsAppMessage(o: {
@@ -80,21 +74,15 @@ export function buildWhatsAppMessage(o: {
 }) {
   const date = formatDateDayMonthYear(o.createdAt);
 
-  // Subtotal like API (sum of rounded line totals)
   const subtotal = o.items.reduce((s, li) => s + Math.round(Number(li.qty) * li.price), 0);
 
-  // Layout constants (tuned for WhatsApp on small screens)
-  const NAME_W = 22;
   const SEP = "--------------------";
-
   const rows: string[] = [];
-for (const li of o.items) {
-  const name = li.item?.name ? li.item.name : "-";
-  // one full line for the (bold) name — no wrapping/splitting
-  rows.push(`*${mdSafe(name)}*`);
-  // next line: qty + italic unit price
-  rows.push(`${li.qty}x   _${idr(li.price)}_`);
-}
+  for (const li of o.items) {
+    const name = li.item?.name ? li.item.name : "-";
+    rows.push(`*${mdSafe(name)}*`);
+    rows.push(`${li.qty}x   _${idr(li.price)}_`);
+  }
 
   const parts: string[] = [
     `Terima Kasih sudah belanja di ${STORE_NAME}!`,
@@ -114,18 +102,12 @@ for (const li of o.items) {
   return parts.join("\n");
 }
 
+const STATUS_OPTIONS: StatusFilter[] = ["All", "Unfinished", "Done"];
 
-
-const STATUS_OPTIONS: StatusFilter[] = [
-  "All",
-  "Unfinished",
-  "Done",
-];
-
-// Map current flags to the 4 requested statuses
-const statusText = (o: Order): Exclude<StatusFilter, "ALL"> => {
-  const paid = o.paymentStatus === 'paid';
-  const del  = o.deliveryStatus === 'delivered';
+// Card/list badge text
+const statusText = (o: Order): BadgeStatus => {
+  const paid = o.paymentStatus === "paid";
+  const del = o.deliveryStatus === "delivered";
   if (paid && del) return "Done";
   if (del && !paid) return "Delivered but Not Paid";
   if (!del && paid) return "Paid but Not Delivered";
@@ -178,20 +160,17 @@ function GridIcon(props: React.SVGProps<SVGSVGElement>) {
 }
 
 const btnIcon =
-  "inline-flex items-center justify-center w-11 h-11 rounded-xl border shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1";
+  "inline-flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-xl border shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1";
 
 /* =========================
    Small UI helpers
 ========================= */
-function StatusBadge({ s }: { s: Exclude<StatusFilter, "ALL"> }) {
-  const map: Record<Exclude<StatusFilter, "ALL">, string> = {
-    // not paid + not delivered
+function StatusBadge({ s }: { s: BadgeStatus }) {
+  const map: Record<BadgeStatus, string> = {
     "In Progress": "bg-yellow-100 text-yellow-800 border border-yellow-200",
-    // delivered + not paid
     "Delivered but Not Paid": "bg-orange-100 text-orange-800 border border-orange-200",
-    // paid + not delivered
     "Paid but Not Delivered": "bg-blue-100 text-blue-800 border border-blue-200",
-    Done: "bg-green-100 text-green-800 border border-green-200",
+    "Done": "bg-green-100 text-green-800 border border-green-200",
   };
   return <span className={`px-2 py-1 rounded text-xs whitespace-nowrap ${map[s]}`}>{s}</span>;
 }
@@ -211,16 +190,18 @@ function asNumber(v: any): number {
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
- const [filter, setFilter] = useState<StatusFilter>(() => {
-   if (typeof window === "undefined") return "Unfinished";
-   return (localStorage.getItem("orders.filter") as StatusFilter) || "Unfinished";
- });
- useEffect(() => {
-   if (typeof window !== "undefined") localStorage.setItem("orders.filter", filter);
- }, [filter])
-  const [payFilter, setPayFilter] = useState<'all'|'unpaid'|'paid'|'refunded'>('all');
-  const [shipFilter, setShipFilter] = useState<'all'|'pending'|'delivered'|'failed'>('all');
-  const [allItems, setAllItems] =  useState("");
+
+  const [filter, setFilter] = useState<StatusFilter>(() => {
+    if (typeof window === "undefined") return "Unfinished";
+    return (localStorage.getItem("orders.filter") as StatusFilter) || "Unfinished";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem("orders.filter", filter);
+  }, [filter]);
+
+  const [payFilter, setPayFilter] = useState<"all" | "unpaid" | "paid" | "refunded">("all");
+  const [shipFilter, setShipFilter] = useState<"all" | "pending" | "delivered" | "failed">("all");
+  const [allItems, setAllItems] = useState<ItemRef[]>([]);
   const [customerQ, setCustomerQ] = useState("");
   const [view, setView] = useState<"cards" | "list">(() => {
     if (typeof window === "undefined") return "cards";
@@ -242,14 +223,15 @@ export default function OrdersPage() {
 
   async function load() {
     setLoading(true);
-    const data: Order[] = await (await fetch("/api/orders")).json();
+    const res = await fetch("/api/orders", { cache: "no-store" });
+    const data: Order[] = await res.json();
     setOrders(Array.isArray(data) ? data : []);
     setLoading(false);
   }
   useEffect(() => {
     load();
     (async () => {
-      const arr: any[] = await (await fetch("/api/items")).json();
+      const arr: any[] = await (await fetch("/api/items", { cache: "no-store" })).json();
       const mapped: ItemRef[] = (Array.isArray(arr) ? arr : []).map((i) => ({
         id: i.id,
         name: i.name,
@@ -283,16 +265,16 @@ export default function OrdersPage() {
         return n.includes(q) || p.includes(q) || a.includes(q);
       });
     }
-   list = list.filter((o) => {
-     if (filter === "ALL") return true;
-     const paid = o.paymentStatus === "paid";
-     const delivered = o.deliveryStatus === "delivered";
-     if (filter === "Unfinished") return !(paid && delivered); // anything not fully done
-     if (filter === "Done") return paid && delivered;
-     return true;
-   });
-    if (payFilter !== 'all')  list = list.filter(o => o.paymentStatus  === payFilter);
-    if (shipFilter !== 'all') list = list.filter(o => o.deliveryStatus === shipFilter);
+    list = list.filter((o) => {
+      const paid = o.paymentStatus === "paid";
+      const delivered = o.deliveryStatus === "delivered";
+      if (filter === "All") return true;
+      if (filter === "Unfinished") return !(paid && delivered);
+      if (filter === "Done") return paid && delivered;
+      return true;
+    });
+    if (payFilter !== "all") list = list.filter((o) => o.paymentStatus === payFilter);
+    if (shipFilter !== "all") list = list.filter((o) => o.deliveryStatus === shipFilter);
     return list;
   }, [orders, filter, waFilter, payFilter, shipFilter, customerQ]);
 
@@ -316,10 +298,8 @@ export default function OrdersPage() {
     setModalMode("edit");
     setModalOrder({
       id: o.id,
-      // send dual tags so the modal uses them directly
-      paymentStatus: o.paymentStatus,        // 'unpaid' | 'paid' | 'refunded'
-      deliveryStatus: o.deliveryStatus,      // 'pending' | 'delivered' | 'failed'
-      // keep timestamps for display/inference safety
+      paymentStatus: o.paymentStatus,
+      deliveryStatus: o.deliveryStatus,
       paidAt: o.paidAt ?? null,
       deliveredAt: o.deliveredAt ?? null,
       deliveryNote: o.deliveryNote ?? "",
@@ -350,8 +330,8 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Header / Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold">Orders</h1>
 
         {waFilter && (
@@ -364,17 +344,20 @@ export default function OrdersPage() {
           </Link>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto w-full sm:w-auto flex flex-wrap items-center gap-2">
           {/* Customer filter */}
-          <input
-            className="border rounded p-2 text-sm w-44"
-            placeholder="Filter customer…"
-            value={customerQ}
-            onChange={(e) => setCustomerQ(e.target.value)}
-            title="Filter by name / phone / address"
-          />
+          <div className="w-full sm:w-44">
+            <input
+              className="w-full border rounded px-3 py-2 text-sm"
+              placeholder="Filter customer…"
+              value={customerQ}
+              onChange={(e) => setCustomerQ(e.target.value)}
+              title="Filter by name / phone / address"
+            />
+          </div>
+
           {/* View toggle */}
-          <div className="inline-flex rounded-xl border bg-white shadow-sm overflow-hidden">
+          <div className="inline-flex rounded-xl border bg-white shadow-sm overflow-hidden shrink-0">
             <button
               className={`px-3 py-2 text-sm ${view === "cards" ? "bg-[var(--color-primary-50,#f0fdf4)] text-[var(--color-primary-800,#14532d)]" : "text-gray-600"}`}
               onClick={() => setView("cards")}
@@ -394,50 +377,55 @@ export default function OrdersPage() {
           </div>
 
           {/* Status filter */}
-          <label htmlFor="status" className="text-sm text-gray-600 hidden sm:inline-block">
-            Filter
-          </label>
-          <select
-            id="status"
-            className="border rounded p-2 text-sm"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as StatusFilter)}
-          >
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <div className="w-[calc(50%-0.25rem)] sm:w-auto">
+            <select
+              className="w-full border rounded px-3 py-2 text-sm"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as StatusFilter)}
+              title="Overall status"
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          {/* NEW: Payment & Delivery filters */}
-          <select
-            className="border rounded p-2 text-sm"
-            value={payFilter}
-            onChange={(e) => setPayFilter(e.target.value as any)}
-            title="Payment status"
-          >
-            <option value="all">Pay: All</option>
-            <option value="unpaid">Unpaid</option>
-            <option value="paid">Paid</option>
-            <option value="refunded">Refunded</option>
-          </select>
-          <select
-            className="border rounded p-2 text-sm"
-            value={shipFilter}
-            onChange={(e) => setShipFilter(e.target.value as any)}
-            title="Delivery status"
-          >
-            <option value="all">Delivery: All</option>
-            <option value="pending">Pending</option>
-            <option value="delivered">Delivered</option>
-            <option value="failed">Failed</option>
-          </select>
+          {/* Payment filter */}
+          <div className="w-[calc(50%-0.25rem)] sm:w-auto">
+            <select
+              className="w-full border rounded px-3 py-2 text-sm"
+              value={payFilter}
+              onChange={(e) => setPayFilter(e.target.value as any)}
+              title="Payment status"
+            >
+              <option value="all">Pay: All</option>
+              <option value="unpaid">Unpaid</option>
+              <option value="paid">Paid</option>
+              <option value="refunded">Refunded</option>
+            </select>
+          </div>
+
+          {/* Delivery filter */}
+          <div className="w-[calc(50%-0.25rem)] sm:w-auto">
+            <select
+              className="w-full border rounded px-3 py-2 text-sm"
+              value={shipFilter}
+              onChange={(e) => setShipFilter(e.target.value as any)}
+              title="Delivery status"
+            >
+              <option value="all">Delivery: All</option>
+              <option value="pending">Pending</option>
+              <option value="delivered">Delivered</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+
           {/* New order button */}
-
           <button
             onClick={openCreate}
-            className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white
                        bg-[var(--color-primary-600)] hover:bg-[var(--color-primary-700)] active:bg-[var(--color-primary-800)]
                        focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-[var(--color-primary-300)]"
           >
@@ -461,7 +449,10 @@ export default function OrdersPage() {
             const s = statusText(o);
             const date = new Date(o.createdAt).toLocaleString("id-ID");
             const itemCount = o.items.reduce((n, it) => n + it.qty, 0);
-            const itemsPreview = o.items.slice(0, 3).map((li) => `${li.item.name}×${li.qty}`).join(", ");
+            const itemsPreview = o.items
+              .slice(0, 3)
+              .map((li) => `${li.item.name}×${li.qty}`)
+              .join(", ");
             return (
               <li key={o.id} className="rounded-2xl border bg-white shadow-sm p-4">
                 {/* Top row */}
@@ -479,10 +470,7 @@ export default function OrdersPage() {
                 {/* Middle */}
                 <div className="mt-3 text-sm text-gray-800">
                   <div className="flex items-center justify-between">
-                    <div className="truncate">
-                      {itemsPreview}
-                      {o.items.length > 3 ? "…" : ""}
-                    </div>
+                    <div className="truncate">{itemsPreview}{o.items.length > 3 ? "…" : ""}</div>
                     <div className="text-xs text-gray-500 ml-2 whitespace-nowrap">{itemCount} items</div>
                   </div>
                   {o.deliveryNote && (
@@ -496,7 +484,7 @@ export default function OrdersPage() {
                 {/* Bottom row */}
                 <div className="mt-4 flex items-center justify-between">
                   <div className="text-lg font-semibold">Rp {o.total.toLocaleString("id-ID")}</div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {o.customer?.whatsapp && (
                       <a
                         className={`${btnIcon} text-white bg-[#25D366] hover:bg-[#1ebe57] active:bg-[#17a652] focus:ring-[#25D366] border-transparent`}
@@ -533,8 +521,8 @@ export default function OrdersPage() {
         </ul>
       ) : (
         /* =============== LIST/TABLE VIEW =============== */
-        <div className="overflow-x-auto border rounded">
-          <table className="min-w-[720px] w-full text-sm">
+        <div className="rounded-2xl border overflow-x-auto">
+          <table className="min-w-full text-sm">
             <thead className="bg-gray-50 text-gray-700">
               <tr className="text-left">
                 <th className="px-3 py-2">Date</th>
