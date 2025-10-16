@@ -20,54 +20,41 @@ export default function CustomerActions({
   onDelete: (id: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      {/* Desktop / tablet: big buttons */}
-      <div className="hidden md:flex items-center gap-2">
-        <TransactionsButton wa={customer.whatsapp} />
-        {customer.whatsapp && <WhatsAppButton wa={customer.whatsapp} />}
-        <EditButton onClick={() => onEdit(customer)} />
-        <DeleteButton onClick={() => onDelete(customer.id)} />
-      </div>
-
-      {/* Mobile: kebab menu */}
-      <div className="md:hidden">
-        <KebabMenu
-          items={[
-            {
-              kind: "link",
-              label: "View transactions",
-              href: customer.whatsapp ? `/orders?wa=${encodeURIComponent(customer.whatsapp)}` : "/orders",
-              icon: <ListIcon className="w-5 h-5" />,
-            },
-            ...(customer.whatsapp
-              ? [
-                  {
-                    kind: "link" as const,
-                    label: "WhatsApp",
-                    href: `https://wa.me/${customer.whatsapp}`,
-                    icon: <WhatsAppIcon className="w-5 h-5" />,
-                    colorClass: "text-[#25D366]",
-                    newTab: true,
-                  },
-                ]
-              : []),
-            {
-              kind: "button",
-              label: "Edit",
-              onClick: () => onEdit(customer),
-              icon: <PencilIcon className="w-5 h-5" />,
-            },
-            {
-              kind: "button",
-              label: "Delete",
-              onClick: () => onDelete(customer.id),
-              icon: <TrashIcon className="w-5 h-5" />,
-              colorClass: "text-red-600",
-            },
-          ]}
-        />
-      </div>
-    </div>
+    <KebabMenu
+      items={[
+        {
+          kind: "link",
+          label: "View transactions",
+          href: customer.whatsapp ? `/orders?wa=${encodeURIComponent(customer.whatsapp)}` : "/orders",
+          icon: <ListIcon className="w-5 h-5" />,
+        },
+        ...(customer.whatsapp
+          ? [
+              {
+                kind: "link" as const,
+                label: "WhatsApp",
+                href: `https://wa.me/${customer.whatsapp}`,
+                icon: <WhatsAppIcon className="w-5 h-5" />,
+                colorClass: "text-[#25D366]",
+                newTab: true,
+              },
+            ]
+          : []),
+        {
+          kind: "button",
+          label: "Edit",
+          onClick: () => onEdit(customer),
+          icon: <PencilIcon className="w-5 h-5" />,
+        },
+        {
+          kind: "button",
+          label: "Delete",
+          onClick: () => onDelete(customer.id),
+          icon: <TrashIcon className="w-5 h-5" />,
+          colorClass: "text-red-600",
+        },
+      ]}
+    />
   );
 }
 
@@ -170,15 +157,15 @@ function KebabMenu({ items }: { items: MenuItem[] }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center justify-center w-11 h-11 rounded-xl border bg-white shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1"
+        className="inline-flex items-center justify-center w-11 h-11 rounded-xl border bg-white shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700"
         title="More actions"
         aria-label="More actions"
       >
-        <KebabIcon className="w-5 h-5 text-gray-700" />
+        <KebabIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-56 rounded-xl border bg-white shadow-lg overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-56 rounded-xl border bg-white shadow-lg overflow-hidden z-50 dark:bg-gray-800 dark:border-gray-700">
           <ul className="py-1">
             {items.map((it, i) =>
               it.kind === "link" ? (
@@ -186,7 +173,7 @@ function KebabMenu({ items }: { items: MenuItem[] }) {
                   <a
                     href={it.href}
                     target={it.newTab ? "_blank" : undefined}
-                    className={`flex items-center gap-3 px-3 py-3 text-sm hover:bg-gray-50 ${it.colorClass || "text-gray-800"}`}
+                    className={`flex items-center gap-3 px-3 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 ${it.colorClass || "text-gray-800 dark:text-gray-200"}`}
                     onClick={() => setOpen(false)}
                   >
                     {it.icon}
@@ -196,7 +183,7 @@ function KebabMenu({ items }: { items: MenuItem[] }) {
               ) : (
                 <li key={i}>
                   <button
-                    className={`w-full text-left flex items-center gap-3 px-3 py-3 text-sm hover:bg-gray-50 ${it.colorClass || "text-gray-800"}`}
+                    className={`w-full text-left flex items-center gap-3 px-3 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 ${it.colorClass || "text-gray-800 dark:text-gray-200"}`}
                     onClick={() => {
                       setOpen(false);
                       it.onClick();

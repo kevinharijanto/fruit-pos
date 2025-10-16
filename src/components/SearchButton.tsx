@@ -36,11 +36,11 @@ export default function SearchButton({
   return (
     <>
       <button
-        className="inline-flex items-center justify-center p-2 rounded-xl border bg-white hover:bg-gray-50"
+        className="inline-flex items-center justify-center p-2 rounded-xl border bg-white hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-600 dark:hover:bg-gray-700"
         onClick={() => setOpen(true)}
         title={`${title} (/, Ctrl+K)`}
       >
-        <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg viewBox="0 0 24 24" className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" strokeWidth="1.8">
           <circle cx="11" cy="11" r="7" />
           <path d="M20 20l-3.5-3.5" />
         </svg>
@@ -50,10 +50,10 @@ export default function SearchButton({
         <div className="fixed inset-0 z-[80]">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
           <div className="absolute left-1/2 top-[12vh] -translate-x-1/2 w-[92vw] max-w-[560px]">
-            <div className="rounded-2xl border bg-white shadow-xl p-3">
+            <div className="rounded-2xl border bg-white shadow-xl p-3 dark:bg-gray-800 dark:border-gray-700">
               <input
                 autoFocus
-                className="w-full border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--color-primary-200)] focus:border-[var(--color-primary-400)]"
+                className="w-full border rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--color-primary-200)] focus:border-[var(--color-primary-400)] bg-white text-gray-900 placeholder-gray-500 dark:bg-gray-700 dark:text-gray-100 dark:placeholder-gray-400 dark:border-gray-600"
                 placeholder={placeholder}
                 value={inner}
                 onChange={(e) => {
@@ -62,7 +62,7 @@ export default function SearchButton({
                 }}
                 onKeyDown={(e) => e.key === "Enter" && setOpen(false)}
               />
-              <div className="mt-2 text-[11px] text-gray-500">Press Enter to close • / or Ctrl+K to open</div>
+              <div className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">Press Enter to close • / or Ctrl+K to open</div>
             </div>
           </div>
         </div>

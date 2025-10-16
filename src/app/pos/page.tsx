@@ -11,7 +11,20 @@ export default function POSPage() {
   const [cust, setCust] = useState({ name:"", address:"", whatsapp:"" });
   const [deliveryNote, setDeliveryNote] = useState("");
 
-  useEffect(() => { fetch("/api/items").then(r=>r.json()).then(setItems); }, []);
+  useEffect(() => {
+    fetch("/api/items")
+      .then(r=>r.json())
+      .then(json => {
+        // Handle new paginated format or fallback to old format
+        let items: any[] = [];
+        if (json.data && Array.isArray(json.data)) {
+          items = json.data;
+        } else if (Array.isArray(json)) {
+          items = json;
+        }
+        setItems(items);
+      });
+  }, []);
 
   // Autofill customer by whatsapp
   async function onWAChange(v: string) {
@@ -52,70 +65,170 @@ export default function POSPage() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-[1fr_420px]">
+    <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
       {/* Items */}
-      <div className="space-y-3">
-        <div className="flex gap-2">
-          <input className="w-full border rounded p-2" placeholder="Cari item…" value={q} onChange={e=>setQ(e.target.value)} />
-          <a href="/items" className="px-3 py-2 border rounded text-sm">Items</a>
+      <div className="space-y-4">
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <input
+              className="input"
+              placeholder="Search items…"
+              value={q}
+              onChange={e=>setQ(e.target.value)}
+            />
+          </div>
+          <a href="/items" className="btn btn-secondary btn-md">Manage Items</a>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map(it=>(
-            <button key={it.id} onClick={()=>add(it.id)} className="border rounded p-3 text-left hover:bg-gray-50">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 grid place-items-center bg-gray-50 rounded text-xl">
-                  {it.image?.startsWith("http") ? <img src={it.image} alt="" className="w-8 h-8 object-cover rounded"/> : (it.image ?? "🛒")}
+            <button
+              key={it.id}
+              onClick={()=>add(it.id)}
+              className="card card-hover p-4 text-left group"
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 grid place-items-center bg-gray-50 rounded-lg text-2xl group-hover:bg-primary-50 transition-colors">
+                  {it.image?.startsWith("http") ?
+                    <img src={it.image} alt="" className="w-12 h-12 object-cover rounded-lg"/> :
+                    (it.image ?? "🛒")
+                  }
                 </div>
-                <div className="font-medium truncate">{it.name}</div>
+                <div className="font-semibold text-gray-900 truncate group-hover:text-primary-600 transition-colors">
+                  {it.name}
+                </div>
               </div>
-              <div className="text-sm opacity-70 mt-1">Rp {it.price.toLocaleString("id-ID")}</div>
-              <div className="text-[11px] opacity-60">Stock: {it.stock}</div>
+              <div className="text-lg font-bold text-gray-900">Rp {it.price.toLocaleString("id-ID")}</div>
+              <div className="text-sm text-gray-500 mt-1">Stock: {it.stock}</div>
             </button>
           ))}
         </div>
       </div>
 
       {/* Cart & Customer */}
-      <div className="sticky top-20 h-fit rounded border p-4 space-y-3">
-        <h2 className="text-lg font-semibold">Create Order</h2>
+      <div className="sticky top-6 h-fit">
+        <div className="card">
+          <div className="card-padding space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Create Order</h2>
+              <p className="text-sm text-gray-500 mt-1">Add customer details and items</p>
+            </div>
 
-        <div className="grid gap-2">
-          <input className="border rounded p-2" placeholder="WhatsApp (62…)" value={cust.whatsapp} onChange={e=>onWAChange(e.target.value)} />
-          <input className="border rounded p-2" placeholder="Nama" value={cust.name} onChange={e=>setCust({...cust, name:e.target.value})}/>
-          <input className="border rounded p-2" placeholder="Alamat" value={cust.address} onChange={e=>setCust({...cust, address:e.target.value})}/>
-          <input className="border rounded p-2" placeholder="Catatan pengantaran (opsional)" value={deliveryNote} onChange={e=>setDeliveryNote(e.target.value)} />
-        </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp</label>
+                <input
+                  className="input"
+                  placeholder="+62…"
+                  value={cust.whatsapp}
+                  onChange={e=>onWAChange(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input
+                  className="input"
+                  placeholder="Customer name"
+                  value={cust.name}
+                  onChange={e=>setCust({...cust, name:e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <input
+                  className="input"
+                  placeholder="Delivery address"
+                  value={cust.address}
+                  onChange={e=>setCust({...cust, address:e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Note (optional)</label>
+                <input
+                  className="input"
+                  placeholder="Special instructions..."
+                  value={deliveryNote}
+                  onChange={e=>setDeliveryNote(e.target.value)}
+                />
+              </div>
+            </div>
 
-        {lines.length === 0 ? (
-          <div className="text-sm text-gray-500">Keranjang kosong.</div>
-        ) : (
-          <div className="space-y-2">
-            {lines.map(l=>{
-              const it = items.find(x=>x.id===l.id);
-              return (
-                <div key={l.id} className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1 truncate">{it?.name}</div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={()=>sub(l.id)} className="px-2 border rounded">−</button>
-                    <span>{l.qty}</span>
-                    <button onClick={()=>add(l.id)} className="px-2 border rounded">＋</button>
-                  </div>
-                  <div className="w-28 text-right">Rp {(l.qty*l.price).toLocaleString("id-ID")}</div>
+            {lines.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <svg viewBox="0 0 24 24" className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/>
+                  <path d="M4 7a2 2 0 012-2 1 1 0 000 2H6a2 2 0 00-2 2v6a2 2 0 002 2h8a2 2 0 002-2V9a2 2 0 00-2-2h-1a1 1 0 100-2h1a4 4 0 014 4v6a4 4 0 01-4 4H6a4 4 0 01-4-4V9a4 4 0 014-4z"/>
+                </svg>
+                <p>Cart is empty</p>
+                <p className="text-sm mt-1">Add items to get started</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="max-h-64 overflow-y-auto space-y-3">
+                  {lines.map(l=>{
+                    const it = items.find(x=>x.id===l.id);
+                    return (
+                      <div key={l.id} className="flex items-center justify-between gap-3 p-3 bg-gray-50 rounded-lg">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-gray-900 truncate">{it?.name}</div>
+                          <div className="text-sm text-gray-500">Rp {it?.price.toLocaleString("id-ID")} each</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={()=>sub(l.id)}
+                            className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 flex items-center justify-center transition-colors"
+                          >
+                            −
+                          </button>
+                          <span className="w-8 text-center font-semibold">{l.qty}</span>
+                          <button
+                            onClick={()=>add(l.id)}
+                            className="w-8 h-8 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 flex items-center justify-center transition-colors"
+                          >
+                            ＋
+                          </button>
+                        </div>
+                        <div className="w-24 text-right font-semibold text-gray-900">
+                          Rp {(l.qty*l.price).toLocaleString("id-ID")}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-            <hr />
-            <div className="flex justify-between font-semibold">
-              <span>Subtotal</span><span>Rp {subtotal.toLocaleString("id-ID")}</span>
+                
+                <div className="border-t border-gray-200 pt-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-lg font-semibold text-gray-900">Subtotal</span>
+                    <span className="text-xl font-bold text-gray-900">Rp {subtotal.toLocaleString("id-ID")}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-3 gap-3 pt-4">
+              <button
+                onClick={()=>checkout("CASH")}
+                className="btn btn-secondary btn-md"
+                disabled={lines.length === 0}
+              >
+                Cash
+              </button>
+              <button
+                onClick={()=>checkout("TRANSFER")}
+                className="btn btn-secondary btn-md"
+                disabled={lines.length === 0}
+              >
+                Transfer
+              </button>
+              <button
+                onClick={()=>checkout("QRIS")}
+                className="btn btn-primary btn-md"
+                disabled={lines.length === 0}
+              >
+                QRIS
+              </button>
             </div>
           </div>
-        )}
-
-        <div className="flex gap-2 pt-2">
-          <button onClick={()=>checkout("CASH")} className="px-3 py-2 rounded border">Cash</button>
-          <button onClick={()=>checkout("TRANSFER")} className="px-3 py-2 rounded border">Transfer</button>
-          <button onClick={()=>checkout("QRIS")} className="px-3 py-2 rounded bg-[--color-brand] text-white">QRIS</button>
         </div>
       </div>
     </div>

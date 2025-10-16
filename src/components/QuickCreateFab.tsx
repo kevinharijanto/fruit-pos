@@ -37,8 +37,8 @@ export default function QuickCreateFab({ brand = false }: { brand?: boolean }) {
       ref={rootRef}
       className="
         app-fab
-        fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+16px)]
-        md:right-6 md:bottom-6
+        fixed right-4 bottom-[calc(max(env(safe-area-inset-bottom),20px)+20px)]
+        md:right-6 md:bottom-[calc(max(env(safe-area-inset-bottom),20px)+24px)]
         z-30
         pointer-events-none
       "
@@ -50,7 +50,7 @@ export default function QuickCreateFab({ brand = false }: { brand?: boolean }) {
         <div
           role="menu"
           aria-label="Quick create"
-          className="absolute right-0 bottom-[72px] flex flex-col items-end gap-2 pointer-events-auto"
+          className="absolute right-0 bottom-[calc(max(env(safe-area-inset-bottom),20px)+80px)] flex flex-col items-end gap-3 pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
           <SpeedItem href="/orders?new=1" label="New Order" onClick={() => setOpen(false)} />
@@ -64,16 +64,15 @@ export default function QuickCreateFab({ brand = false }: { brand?: boolean }) {
         aria-label="Create"
         onClick={() => setOpen((v) => !v)}
         className={[
-          "pointer-events-auto grid place-items-center w-14 h-14 rounded-full shadow-lg border focus:outline-none",
-          !brand && "bg-white border-gray-200 text-gray-800 hover:shadow-xl active:shadow",
+          "pointer-events-auto grid place-items-center w-14 h-14 rounded-full shadow-lg border focus:outline-none transition-all duration-200",
+          !brand && "bg-white border-gray-200 text-gray-700 hover:shadow-xl hover:scale-105 active:shadow active:scale-95 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300",
           brand &&
-            "text-white focus:ring-2 focus:ring-offset-2 " +
-              "bg-[color:var(--color-brand-600,#16a34a)] " +
-              "hover:bg-[color:var(--color-brand-700,#15803d)] " +
-              "active:bg-[color:var(--color-brand-800,#166534)]",
+            "text-white focus:ring-4 focus:ring-primary-200 focus:ring-offset-2 " +
+              "bg-primary-600 hover:bg-primary-700 hover:shadow-xl hover:scale-105 " +
+              "active:bg-primary-800 active:shadow active:scale-95",
         ].join(" ")}
       >
-        <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.5">
           <path d="M12 5v14M5 12h14" />
         </svg>
       </button>
@@ -96,14 +95,25 @@ function SpeedItem({
       onClick={onClick}
       className="
         pointer-events-auto
-        flex items-center gap-2
+        flex items-center gap-3
         rounded-xl border shadow-lg
-        bg-white hover:bg-gray-50
-        px-3 py-2 text-sm min-w-[168px] justify-between
+        bg-white hover:bg-gray-50 hover:shadow-xl
+        px-4 py-3 text-sm min-w-[180px] justify-between
+        transition-all duration-200
+        dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700
       "
     >
-      <span className="inline-flex w-5 h-5 items-center justify-center rounded bg-gray-900 text-white text-[13px]">+</span>
-      <span className="font-medium">{label}</span>
+      <div className="flex items-center gap-3">
+        <span className="inline-flex w-6 h-6 items-center justify-center rounded-lg bg-primary-600 text-white text-xs font-medium">
+          <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </span>
+        <span className="font-medium text-gray-700 dark:text-gray-300">{label}</span>
+      </div>
+      <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 18l6-6-6-6" />
+      </svg>
     </Link>
   );
 }

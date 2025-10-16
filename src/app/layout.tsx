@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
+import { DarkModeProvider } from "@/contexts/DarkModeContext";
 
 // src/app/layout.tsx
 export const metadata = {
@@ -19,13 +20,21 @@ export const metadata = {
   },
 };
 // app/layout.tsx (if you manage viewport manually)
-export const viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover' };
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: 'cover',
+  userScalable: false
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="id" className="h-full">
-      <body className="min-h-svh bg-[--color-app-bg] text-gray-900 antialiased">
-        <AppShell>{children}</AppShell>
+      <body className="min-h-svh bg-[--color-app-bg] text-[--color-text-primary] antialiased">
+        <DarkModeProvider>
+          <AppShell>{children}</AppShell>
+        </DarkModeProvider>
       </body>
     </html>
   );

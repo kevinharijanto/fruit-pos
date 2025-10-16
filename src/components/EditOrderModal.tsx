@@ -1,11 +1,12 @@
-// src/components/EditOrderModal.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Modal, { ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
+import { cn } from "@/lib/utils";
 
 export type OrderForEdit = {
   id?: string;
-  // NEW dual-tag statuses (optional so callers don’t break)
+  // NEW dual-tag statuses (optional so callers don't break)
   paymentStatus?: "unpaid" | "paid" | "refunded";
   deliveryStatus?: "pending" | "delivered" | "failed";
   // legacy fields still accepted for inference
@@ -32,15 +33,9 @@ export default function EditOrderModal({
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
-  // Body lock (skip iOS background issues)
-  useEffect(() => {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    if (isIOS) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, []);
-
+  // State for items search with pagination
+  const [searchResults, setSearchResults] = useState<ItemRef[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   // Customer
   const [name, setName] = useState(order.customer?.name ?? "");
   const [address, setAddress] = useState(order.customer?.address ?? "");
@@ -52,7 +47,7 @@ export default function EditOrderModal({
     let ignore = false;
     (async () => {
       if (fullWA.length >= 8) {
-        const res = await fetch("/api/customers?q=" + encodeURIComponent(fullWA), { cache: "no-store" });
+        const res = await fetch("/api/customers?wa=" + encodeURIComponent(fullWA), { cache: "no-store" });
         const arr = (await res.json()) as CustPick[];
         const c = Array.isArray(arr) ? arr.find((x) => x.whatsapp === fullWA) : undefined;
         if (!ignore && c) {
@@ -83,11 +78,52 @@ export default function EditOrderModal({
   }, [order.items]);
 
   const [query, setQuery] = useState("");
+  
+  // Update search results when query changes
+  useEffect(() => {
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    
+    let ignore = false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(async () => {
+      try {
+        setSearchLoading(true);
+        const res = await fetch(`/api/items?q=${encodeURIComponent(query.trim())}&limit=50`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const data = await res.json();
+        // Handle paginated response
+        const items = data.data || (Array.isArray(data) ? data : []);
+        if (!ignore) {
+          setSearchResults(items);
+        }
+      } catch (error) {
+        if (!ignore && error instanceof Error && error.name !== 'AbortError') {
+          console.error('Failed to search items:', error);
+        }
+      } finally {
+        if (!ignore) {
+          setSearchLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      ignore = true;
+      controller.abort();
+      clearTimeout(timeoutId);
+    };
+  }, [query]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return allItems;
-    return allItems.filter((i) => i.name.toLowerCase().includes(q));
-  }, [allItems, query]);
+    return searchResults;
+  }, [allItems, query, searchResults]);
 
   // Helpers for unit-aware qty edits
   function roundByUnit(itemId: string, q: number) {
@@ -138,12 +174,26 @@ export default function EditOrderModal({
 
   function addItem(itemId: string) {
     const exists = lines.find((l) => l.itemId === itemId);
-    const it = itemsById[itemId];
+    let it = itemsById[itemId];
+    
+    // If not found in itemsById, check search results
+    if (!it) {
+      const searchItem = searchResults.find(item => item.id === itemId);
+      if (searchItem) {
+        it = searchItem;
+      }
+    }
+    
     if (!it) return;
     if (exists) inc(itemId);
-    else setLines((prev) => [...prev, { itemId, name: it.name, qty: it.unit === "KG" ? 0.01 : 1, price: it.price }]);
+    else setLines((prev) => [...prev, {
+      itemId,
+      name: it.name,
+      qty: it.unit === "KG" ? 0.01 : 1,
+      price: it.price
+    }]);
   }
-//
+
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.qty * l.price, 0), [lines]);
 
   // Meta
@@ -161,7 +211,11 @@ export default function EditOrderModal({
 
   const total = Math.max(subtotal - (discount || 0) + (deliveryFee || 0), 0);
 
+  const [saving, setSaving] = useState(false);
+
   async function save() {
+    if (saving) return; // Prevent multiple calls
+    
     const payload = {
       customer: fullWA || name || address ? { name, address, whatsapp: fullWA } : undefined,
       items: lines.filter((l) => l.qty > 0).map((l) => ({ itemId: l.itemId, qty: l.qty })),
@@ -173,24 +227,31 @@ export default function EditOrderModal({
       deliveryStatus,
     };
 
-    let res: Response;
-    if (mode === "create") {
-      res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    } else {
-      res = await fetch(`/api/orders/${order.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    }
-
-    if (!res.ok) {
-      const ct = res.headers.get("content-type") || "";
-      if (ct.includes("application/json")) {
-        const j = await res.json();
-        alert(`Failed to save: ${j.error ?? res.statusText}`);
+    try {
+      setSaving(true);
+      let res: Response;
+      if (mode === "create") {
+        res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       } else {
-        alert(`Failed to save (${res.status}).`);
+        res = await fetch(`/api/orders/${order.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       }
-      return;
+
+      if (!res.ok) {
+        const ct = res.headers.get("content-type") || "";
+        if (ct.includes("application/json")) {
+          const j = await res.json();
+          alert(`Failed to save: ${j.error ?? res.statusText}`);
+        } else {
+          alert(`Failed to save (${res.status}).`);
+        }
+        return;
+      }
+      await onSaved();
+    } catch (error) {
+      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setSaving(false);
     }
-    await onSaved();
   }
 
   // Customer picker (unchanged visual)
@@ -207,8 +268,10 @@ export default function EditOrderModal({
       try {
         const url = "/api/customers" + (custQ.trim() ? `?q=${encodeURIComponent(custQ.trim())}` : "");
         const res = await fetch(url, { cache: "no-store", signal: ctrl.signal });
-        const arr = (await res.json()) as CustPick[];
-        if (!ignore) setCustResults(Array.isArray(arr) ? arr : []);
+        const data = await res.json();
+        // Handle paginated response
+        const arr = data.data || (Array.isArray(data) ? data : []);
+        if (!ignore) setCustResults(arr);
       } finally {
         if (!ignore) setCustLoading(false);
       }
@@ -227,57 +290,114 @@ export default function EditOrderModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50">
-      <div
-        className="
-          fixed inset-0
-          sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2
-          bg-white
-          h-[100dvh] w-[100vw] sm:h-auto sm:max-h-[90svh] sm:w-[760px]
-          overflow-hidden
-          rounded-none sm:rounded-xl shadow
-          flex flex-col min-h-0
-        "
+    <>
+      <Modal
+        isOpen={true}
+        onClose={onClose}
+        size="responsive"
+        className="overflow-hidden"
       >
-        {/* Header */}
-        <div className="border-b px-5 py-4 flex items-center justify-between">
-          <div className="text-xl font-semibold">{mode === "create" ? "New Order" : "Edit Order"}</div>
-          <button onClick={onClose} className="text-base underline">Close</button>
-        </div>
+        <ModalHeader>
+          <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            {mode === "create" ? "New Order" : "Edit Order"}
+          </div>
+        </ModalHeader>
 
-        {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 space-y-7 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
-          {/* CUSTOMER */}
-          <section className="space-y-3">
+        <ModalBody className="space-y-6">
+          {/* CUSTOMER SECTION */}
+          <section className="bg-gray-50 dark:bg-gray-900/30 rounded-xl p-3 sm:p-6 space-y-3 sm:space-y-4 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
-              <div className="text-base font-medium">Customer</div>
-              <button type="button" className="px-3 py-2 border rounded text-base" onClick={() => { setPickerOpen(true); setCustQ(""); }}>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/50 rounded-lg flex items-center justify-center">
+                  <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">Customer Information</div>
+              </div>
+              <button
+                type="button"
+                className={cn(
+                  "px-3 py-2 border rounded-lg text-sm font-medium transition-colors",
+                  "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
+                  "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+                onClick={() => { setPickerOpen(true); setCustQ(""); }}
+                disabled={saving}
+              >
                 Choose existing
               </button>
             </div>
 
-            <div className="text-base font-medium">Name</div>
-            <input className="border rounded p-4 w-full text-base" placeholder="Customer name" value={name} onChange={(e) => setName(e.target.value)} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                <input 
+                  className={cn(
+                    "input text-base",
+                    "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
+                    "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+                  )} 
+                  placeholder="Customer name" 
+                  value={name} 
+                  onChange={(e) => setName(e.target.value)} 
+                />
+              </div>
 
-            <div className="text-base font-medium">Phone number</div>
-            <div className="flex">
-              <div className="px-4 py-4 border rounded-l bg-gray-50 select-none text-base">+62</div>
-              <input inputMode="numeric" className="border border-l-0 rounded-r p-4 w-full text-base" placeholder="8123 456 789" value={phoneDisplay} onChange={(e) => onPhoneInput(e.target.value)} />
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Phone number</label>
+                <div className="flex">
+                  <div className={cn(
+                    "px-4 py-3 border rounded-l-lg bg-gray-50 select-none text-sm font-medium",
+                    "bg-gray-100 border-gray-300 text-gray-700",
+                    "dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+                  )}>
+                    +62
+                  </div>
+                  <input 
+                    inputMode="numeric" 
+                    className={cn(
+                      "input border-l-0 rounded-r-lg text-base",
+                      "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
+                      "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+                    )} 
+                    placeholder="8123 456 789" 
+                    value={phoneDisplay} 
+                    onChange={(e) => onPhoneInput(e.target.value)} 
+                  />
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">Stored as {fullWA || "—"}</div>
+              </div>
             </div>
-            <div className="text-[12px] text-gray-500">Stored as {fullWA || "—"}</div>
 
-            <div className="text-base font-medium">Address</div>
-            <input className="border rounded p-4 w-full text-base" placeholder="Street, house no., etc." value={address} onChange={(e) => setAddress(e.target.value)} />
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
+              <input 
+                className={cn(
+                  "input text-base",
+                  "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
+                  "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+                )} 
+                placeholder="Street, house no., etc." 
+                value={address} 
+                onChange={(e) => setAddress(e.target.value)} 
+              />
+            </div>
           </section>
 
-          {/* ITEMS */}
-          <section className="space-y-3">
+          {/* ITEMS SECTION */}
+          <section className="bg-gray-50 dark:bg-gray-900/30 rounded-xl p-3 sm:p-6 space-y-3 sm:space-y-4 border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
-              <div className="text-base font-medium">Items</div>
-              <div className="text-sm text-gray-600">
-                Subtotal: <span className="font-semibold">Rp {subtotal.toLocaleString("id-ID")}</span>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-green-100 dark:bg-green-900/50 rounded-lg flex items-center justify-center">
+                  <svg className="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                </div>
+                <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">Items</div>
               </div>
-              <div className="text-right text-sm text-gray-700 leading-5">
+              <div className="text-right text-sm text-gray-700 dark:text-gray-300 leading-5">
                 <div>Subtotal: <span className="font-semibold">Rp {subtotal.toLocaleString("id-ID")}</span></div>
                 {discount ? <div>Discount: −Rp {discount.toLocaleString("id-ID")}</div> : null}
                 {deliveryFee ? <div>Ongkir: +Rp {deliveryFee.toLocaleString("id-ID")}</div> : null}
@@ -285,53 +405,106 @@ export default function EditOrderModal({
             </div>
 
             {/* Search to add */}
-            <div className="rounded border overflow-hidden">
-              <div className="p-3 border-b">
-                <input className="w-full border rounded p-3 text-base" placeholder="Search items to add…" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <div className="rounded-lg border overflow-hidden bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600">
+              <div className="p-2 sm:p-3 border-b border-gray-200 dark:border-gray-600">
+                <input 
+                  className={cn(
+                    "input text-base",
+                    "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
+                    "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+                  )} 
+                  placeholder="Search items to add…" 
+                  value={query} 
+                  onChange={(e) => setQuery(e.target.value)} 
+                />
               </div>
-              <div className="max-h-48 min-h-0 overflow-y-auto divide-y [-webkit-overflow-scrolling:touch]">
+              <div className="max-h-40 sm:max-h-48 min-h-0 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-600">
                 {filtered.map((it) => (
-                  <button key={it.id} type="button" onClick={() => addItem(it.id)} className="w-full text-left p-3 hover:bg-gray-50 flex items-center justify-between text-base">
-                    <span className="truncate">{it.name}</span>
-                    <span className="text-xs text-gray-600">Rp {it.price.toLocaleString("id-ID")} • stock {it.stock}{it.unit ? ` • ${it.unit.toLowerCase()}` : ""}</span>
+                  <button 
+                    key={it.id} 
+                    type="button" 
+                    onClick={() => addItem(it.id)} 
+                    className={cn(
+                      "w-full text-left p-3 hover:bg-gray-50 flex items-center justify-between text-base transition-colors",
+                      "hover:bg-gray-50",
+                      "dark:hover:bg-gray-700"
+                    )}
+                  >
+                    <span className="truncate font-medium text-gray-900 dark:text-gray-100">{it.name}</span>
+                    <span className="text-xs text-gray-600 dark:text-gray-400">
+                      Rp {it.price.toLocaleString("id-ID")} • stock {it.stock}{it.unit ? ` • ${it.unit.toLowerCase()}` : ""}
+                    </span>
                   </button>
                 ))}
-                {filtered.length === 0 && <div className="p-3 text-sm text-gray-500">No items.</div>}
+                {filtered.length === 0 && <div className="p-3 text-sm text-gray-500 dark:text-gray-400">No items.</div>}
               </div>
             </div>
 
             {/* Current items */}
-            <ul className="divide-y rounded border">
-              {lines.length === 0 && <li className="p-4 text-base text-gray-500">No items.</li>}
+            <ul className="divide-y divide-gray-200 dark:divide-gray-600 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800">
+              {lines.length === 0 && <li className="p-4 text-base text-gray-500 dark:text-gray-400">No items.</li>}
               {lines.map((l) => {
                 const u = itemsById[l.itemId]?.unit || "PCS";
                 const step = u === "KG" ? 0.001 : 1;
                 return (
-                  <li key={l.itemId} className="p-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+                  <li key={l.itemId} className="p-3 sm:p-4 grid grid-cols-1 gap-2 sm:gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
                     <div className="min-w-0">
-                      <div className="truncate text-base font-medium">{l.name}</div>
-                      <div className="text-xs text-gray-600">Rp {l.price.toLocaleString("id-ID")} / {u === "KG" ? "kg" : "pcs"}</div>
+                      <div className="truncate text-base font-medium text-gray-900 dark:text-gray-100">{l.name}</div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                        Rp {l.price.toLocaleString("id-ID")} / {u === "KG" ? "kg" : "pcs"}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button className="px-4 py-3 border rounded text-base" onClick={() => dec(l.itemId)}>−</button>
+                      <button 
+                        className={cn(
+                          "px-3 py-2 border rounded-lg text-base font-medium transition-colors",
+                          "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
+                          "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                        )} 
+                        onClick={() => dec(l.itemId)}
+                      >
+                        −
+                      </button>
                       <input
                         type="number"
                         step={step}
-                        className="w-24 border rounded p-3 text-center text-base"
+                        className={cn(
+                          "w-20 border rounded-lg p-2 text-center text-base font-medium",
+                          "bg-white border-gray-300 text-gray-900",
+                          "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+                        )}
                         value={l.qty}
                         min={0}
                         onChange={(e) => setQty(l.itemId, Number(e.target.value))}
                       />
-                      <button className="px-4 py-3 border rounded text-base" onClick={() => inc(l.itemId)}>＋</button>
+                      <button 
+                        className={cn(
+                          "px-3 py-2 border rounded-lg text-base font-medium transition-colors",
+                          "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
+                          "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                        )} 
+                        onClick={() => inc(l.itemId)}
+                      >
+                        ＋
+                      </button>
                     </div>
 
-                    <div className="text-right sm:w-32 text-base font-semibold">
+                    <div className="text-right sm:w-32 text-base font-semibold text-gray-900 dark:text-gray-100">
                       Rp {(l.qty * l.price).toLocaleString("id-ID")}
                     </div>
 
                     <div className="text-right">
-                      <button className="px-3 py-2 border rounded text-sm" onClick={() => remove(l.itemId)}>Remove</button>
+                      <button 
+                        className={cn(
+                          "px-3 py-2 border rounded-lg text-sm font-medium transition-colors",
+                          "border-red-300 bg-white hover:bg-red-50 text-red-700",
+                          "dark:border-red-600 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                        )} 
+                        onClick={() => remove(l.itemId)}
+                      >
+                        Remove
+                      </button>
                     </div>
                   </li>
                 );
@@ -339,110 +512,214 @@ export default function EditOrderModal({
             </ul>
           </section>
 
-          {/* META */}
-          <section className="space-y-3">
-            <div className="text-base font-medium">Payment method</div>
-            <select className="border rounded p-4 w-full text-base" value={paymentType ?? ""} onChange={(e) => setPaymentType((e.target.value || null) as any)}>
-              <option value="">Select…</option>
-              <option value="CASH">Cash</option>
-              <option value="TRANSFER">Transfer</option>
-              <option value="QRIS">QRIS</option>
-            </select>
-
-            <div className="text-base font-medium">Notes</div>
-            <input className="border rounded p-4 w-full text-base" placeholder="Delivery notes (optional)" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} />
-
-          {/* NEW: Dual-tag status controls */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="text-base font-medium">Payment status</div>
-              <select
-                className="border rounded p-4 w-full text-base"
-                value={paymentStatus}
-                onChange={(e) => setPaymentStatus(e.target.value as any)}
-              >
-                <option value="unpaid">Unpaid</option>
-                <option value="paid">Paid</option>
-                <option value="refunded">Refunded</option>
-              </select>
+          {/* ORDER DETAILS SECTION */}
+          <section className="bg-gray-50 dark:bg-gray-900/30 rounded-xl p-3 sm:p-6 space-y-3 sm:space-y-4 border border-gray-200 dark:border-gray-700">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/50 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">Order Details</div>
             </div>
-            <div className="space-y-2">
-              <div className="text-base font-medium">Delivery status</div>
-              <select
-                className="border rounded p-4 w-full text-base"
-                value={deliveryStatus}
-                onChange={(e) => setDeliveryStatus(e.target.value as any)}
-              >
-                <option value="pending">Pending</option>
-                <option value="delivered">Delivered</option>
-                <option value="failed">Failed</option>
-              </select>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment method</label>
+                <select 
+                  className={cn(
+                    "input text-base",
+                    "bg-white border-gray-300 text-gray-900",
+                    "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+                  )} 
+                  value={paymentType ?? ""} 
+                  onChange={(e) => setPaymentType((e.target.value || null) as any)}
+                >
+                  <option value="">Select…</option>
+                  <option value="CASH">Cash</option>
+                  <option value="TRANSFER">Transfer</option>
+                  <option value="QRIS">QRIS</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
+                <input 
+                  className={cn(
+                    "input text-base",
+                    "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
+                    "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+                  )} 
+                  placeholder="Delivery notes (optional)" 
+                  value={deliveryNote} 
+                  onChange={(e) => setDeliveryNote(e.target.value)} 
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Discount */}
-          <div className="flex items-center gap-3">
-            <span className="text-base">Discount</span>
-            <input
-              className="border rounded p-3 w-32 text-base"
-              type="number"
-              min={0}
-              value={discount}
-              onChange={(e) => setDiscount(Number(e.target.value || 0))}
-            />
-          </div>
+            {/* NEW: Dual-tag status controls */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment status</label>
+                <select
+                  className={cn(
+                    "input text-base",
+                    "bg-white border-gray-300 text-gray-900",
+                    "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+                  )}
+                  value={paymentStatus}
+                  onChange={(e) => setPaymentStatus(e.target.value as any)}
+                >
+                  <option value="unpaid">Unpaid</option>
+                  <option value="paid">Paid</option>
+                  <option value="refunded">Refunded</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Delivery status</label>
+                <select
+                  className={cn(
+                    "input text-base",
+                    "bg-white border-gray-300 text-gray-900",
+                    "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+                  )}
+                  value={deliveryStatus}
+                  onChange={(e) => setDeliveryStatus(e.target.value as any)}
+                >
+                  <option value="pending">Pending</option>
+                  <option value="delivered">Delivered</option>
+                  <option value="failed">Failed</option>
+                </select>
+              </div>
+            </div>
 
-          {/* Delivery Fee (Ongkir) */}
-          <div className="flex items-center gap-3">
-            <span className="text-base">Delivery Fee (Ongkir)</span>
-            <input
-              className="border rounded p-3 w-32 text-base"
-              type="number"
-              min={0}
-              value={deliveryFee}
-              onChange={(e) => setDeliveryFee(Number(e.target.value || 0))}
-            />
-          </div>
+            {/* Discount and Delivery Fee */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Discount</label>
+                <input
+                  className={cn(
+                    "input w-full text-base",
+                    "bg-white border-gray-300 text-gray-900",
+                    "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+                  )}
+                  type="number"
+                  min={0}
+                  value={discount}
+                  onChange={(e) => setDiscount(Number(e.target.value || 0))}
+                />
+              </div>
 
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Delivery Fee (Ongkir)</label>
+                <input
+                  className={cn(
+                    "input w-full text-base",
+                    "bg-white border-gray-300 text-gray-900",
+                    "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+                  )}
+                  type="number"
+                  min={0}
+                  value={deliveryFee}
+                  onChange={(e) => setDeliveryFee(Number(e.target.value || 0))}
+                />
+              </div>
+            </div>
           </section>
-        </div>
+        </ModalBody>
 
-        {/* Footer */}
-        <div className="border-t px-5 py-4 pb-[env(safe-area-inset-bottom)] flex items-center justify-between">
-          <div className="text-lg font-semibold">Total: Rp {total.toLocaleString("id-ID")}</div>
-          <div className="flex gap-3">
-            <button className="px-5 py-3 border rounded text-base" onClick={onClose}>Cancel</button>
-            <button className="px-5 py-3 rounded text-white bg-green-600 hover:bg-green-700 active:bg-green-800 text-base focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-600" onClick={save}>
-              Save Changes
-            </button>
+        <ModalFooter>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full gap-3 sm:gap-0">
+            <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Total: Rp {total.toLocaleString("id-ID")}
+            </div>
+            <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
+              <button
+                type="button"
+                className={cn(
+                  "btn btn-secondary btn-md flex-1 sm:flex-none",
+                  "dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                )}
+                onClick={onClose}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "btn btn-primary btn-md flex-1 sm:flex-none",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+                onClick={save}
+                disabled={saving}
+              >
+                {saving ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving…
+                  </span>
+                ) : (
+                  "Save Changes"
+                )}
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
+        </ModalFooter>
+      </Modal>
 
       {/* Picker sheet (unchanged UI) */}
       {pickerOpen && (
         <div className="fixed inset-0 z-[60] bg-black/40">
-          <div className="fixed inset-x-0 bottom-0 sm:inset-0 sm:m-auto bg-white h-[75dvh] sm:h-auto sm:max-h-[85svh] sm:w-[700px] rounded-t-2xl sm:rounded-xl shadow flex flex-col min-h-0">
-            <div className="border-b px-5 py-4 flex items-center justify-between">
-              <div className="text-lg font-semibold">Choose Customer</div>
-              <button className="text-base underline" onClick={() => setPickerOpen(false)}>Close</button>
+          <div className="fixed inset-x-0 bottom-0 sm:inset-0 sm:m-auto bg-white h-[75dvh] sm:h-auto sm:max-h-[85svh] sm:w-[700px] rounded-t-2xl sm:rounded-xl shadow flex flex-col min-h-0 dark:bg-gray-800">
+            <div className="border-b px-5 py-4 flex items-center justify-between dark:border-gray-700">
+              <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">Choose Customer</div>
+              <button
+                type="button"
+                className="text-base underline text-gray-600 dark:text-gray-400"
+                onClick={() => setPickerOpen(false)}
+                disabled={saving}
+              >
+                Close
+              </button>
             </div>
-            <div className="px-5 py-3 border-b">
-              <input className="w-full border rounded p-3 text-base" placeholder="Search name, address, or phone…" value={custQ} onChange={(e) => setCustQ(e.target.value)} autoFocus />
+            <div className="px-5 py-3 border-b dark:border-gray-700">
+              <input 
+                className={cn(
+                  "input text-base",
+                  "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
+                  "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+                )} 
+                placeholder="Search name, address, or phone…" 
+                value={custQ} 
+                onChange={(e) => setCustQ(e.target.value)} 
+                autoFocus 
+              />
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-1 [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-1">
               {custLoading ? (
-                <div className="p-4 text-sm text-gray-500">Loading…</div>
+                <div className="p-4 text-sm text-gray-500 dark:text-gray-400">Loading…</div>
               ) : custResults.length === 0 ? (
-                <div className="p-4 text-sm text-gray-500">No customers found.</div>
+                <div className="p-4 text-sm text-gray-500 dark:text-gray-400">No customers found.</div>
               ) : (
-                <ul className="divide-y">
+                <ul className="divide-y dark:divide-gray-700">
                   {custResults.map((c) => (
                     <li key={c.id}>
-                      <button type="button" onClick={() => chooseCustomer(c)} className="w-full text-left p-4 hover:bg-gray-50">
-                        <div className="text-base font-medium truncate">{c.name || "—"}</div>
-                        <div className="mt-1 text-sm text-gray-700 break-words">{c.address || "No address"}</div>
-                        <div className="mt-1 text-sm text-gray-500">{c.whatsapp ? `+${c.whatsapp}` : "No phone"}</div>
+                      <button 
+                        type="button" 
+                        onClick={() => chooseCustomer(c)} 
+                        className={cn(
+                          "w-full text-left p-4 hover:bg-gray-50",
+                          "hover:bg-gray-50",
+                          "dark:hover:bg-gray-700"
+                        )}
+                      >
+                        <div className="text-base font-medium truncate text-gray-900 dark:text-gray-100">{c.name || "—"}</div>
+                        <div className="mt-1 text-sm text-gray-700 break-words dark:text-gray-300">{c.address || "No address"}</div>
+                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">{c.whatsapp ? `+${c.whatsapp}` : "No phone"}</div>
                       </button>
                     </li>
                   ))}
@@ -452,6 +729,6 @@ export default function EditOrderModal({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -13,11 +13,14 @@ function normalizeWA(raw?: string | null) {
   return d;
 }
 
-// GET /api/customers?q=...
+// GET /api/customers?q=...&page=1&limit=10
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
   const wa = (url.searchParams.get("wa") || "").replace(/\D/g, ""); // exact WA match
+  const page = parseInt(url.searchParams.get("page") || "1");
+  const limit = parseInt(url.searchParams.get("limit") || "10");
+  const skip = (page - 1) * limit;
 
   const select = { id: true, name: true, address: true, whatsapp: true, createdAt: true };
 
@@ -27,31 +30,42 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(c ? [c] : []);
   }
 
-  // No query: return recent list
-  if (!q) {
-    const list = await prisma.customer.findMany({
-      select,
-      orderBy: { name: "asc" },
-      take: 500,
-    });
-    return NextResponse.json(list);
-  }
+  // Build where clause for search
+  const where = q ? {
+    OR: [
+      { name: { contains: q, mode: 'insensitive' } },
+      { address: { contains: q, mode: 'insensitive' } },
+      { whatsapp: { contains: q } }
+    ]
+  } : {};
 
-  // Case-insensitive filtering (SQLite-safe)
-  const all = await prisma.customer.findMany({
+  // Get total count for pagination
+  const total = await prisma.customer.count({ where });
+
+  // Get paginated results
+  const list = await prisma.customer.findMany({
+    where,
     select,
     orderBy: { name: "asc" },
-    take: 500,
+    skip,
+    take: limit,
   });
 
-  const lq = q.toLowerCase();
-  const filtered = all.filter((c) =>
-    (c.name || "").toLowerCase().includes(lq) ||
-    (c.address || "").toLowerCase().includes(lq) ||
-    (c.whatsapp || "").includes(q)
-  );
-
-  return NextResponse.json(filtered);
+  // Cache for 2 minutes - customer data changes moderately
+  const response = NextResponse.json({
+    data: list,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      hasNext: page * limit < total,
+      hasPrev: page > 1
+    }
+  });
+  
+  response.headers.set('Cache-Control', 'public, max-age=120, s-maxage=120');
+  return response;
 }
 
 // POST /api/customers

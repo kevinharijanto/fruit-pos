@@ -1,7 +1,8 @@
-// src/components/EditItemModal.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Modal, { ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
+import { cn } from "@/lib/utils";
 
 type Category = { id: string; name: string };
 
@@ -28,22 +29,6 @@ export default function EditItemModal({
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
-  /* ===== Body lock + hide FAB ===== */
-  useEffect(() => {
-    const prevHtml = document.documentElement.style.overflow;
-    const prevBody = document.body.style.overflow;
-    document.documentElement.classList.add("modal-open");
-    document.body.classList.add("modal-open");
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.documentElement.classList.remove("modal-open");
-      document.body.classList.remove("modal-open");
-      document.documentElement.style.overflow = prevHtml;
-      document.body.style.overflow = prevBody;
-    };
-  }, []);
-
   /* ===== Form state ===== */
   const [name, setName] = useState(item?.name ?? "");
   const [price, setPrice] = useState<number>(item?.price ?? 0);
@@ -91,26 +76,40 @@ export default function EditItemModal({
   }, []);
 
   async function createCategory() {
+    if (addingCat) return; // Prevent multiple calls
     const n = newCat.trim();
     if (!n) return;
-    const res = await fetch("/api/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: n }),
-    });
-    if (!res.ok) {
+    
+    setAddingCat(true);
+    try {
+      const res = await fetch("/api/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: n }),
+      });
+      if (!res.ok) {
+        alert("Failed to create category");
+        return;
+      }
+      const cat = await res.json();
+      setCategories((prev) => [...prev.filter((c) => c.id !== cat.id), cat].sort((a, b) => a.name.localeCompare(b.name)));
+      setCategoryId(cat.id);
+      setNewCat("");
+      setAddingCat(false);
+    } catch (error) {
       alert("Failed to create category");
-      return;
+      setAddingCat(false);
     }
-    const cat = await res.json();
-    setCategories((prev) => [...prev.filter((c) => c.id !== cat.id), cat].sort((a, b) => a.name.localeCompare(b.name)));
-    setCategoryId(cat.id);
-    setNewCat("");
-    setAddingCat(false);
   }
 
-  const pricePreview = useMemo(() => Math.max(0, Math.floor(price)).toLocaleString("id-ID"), [price]);
-  const costPreview = useMemo(() => Math.max(0, Math.floor(costPrice)).toLocaleString("id-ID"), [costPrice]);
+  const pricePreview = useMemo(() => {
+    const value = Math.max(0, unit === "KG" ? price : Math.floor(price));
+    return value.toLocaleString("id-ID", { maximumFractionDigits: unit === "KG" ? 2 : 0 });
+  }, [price, unit]);
+  const costPreview = useMemo(() => {
+    const value = Math.max(0, unit === "KG" ? costPrice : Math.floor(costPrice));
+    return value.toLocaleString("id-ID", { maximumFractionDigits: unit === "KG" ? 2 : 0 });
+  }, [costPrice, unit]);
 
   async function save() {
     if (busy || !isValid) return;
@@ -132,8 +131,8 @@ export default function EditItemModal({
 
     const payload: any = {
       name: name.trim(),
-      price: Math.floor(Math.max(0, price)),
-      costPrice: Math.floor(Math.max(0, costPrice)),
+      price: finalUnit === "KG" ? Math.max(0, price) : Math.floor(Math.max(0, price)),
+      costPrice: finalUnit === "KG" ? Math.max(0, costPrice) : Math.floor(Math.max(0, costPrice)),
       unit: finalUnit,
       stockMode: finalStockMode,
       stock: finalStockMode === "TRACK" ? finalStock : undefined,
@@ -163,171 +162,213 @@ export default function EditItemModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50">
-      <div
-        className="
-          fixed inset-0
-          sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2
-          bg-white h-[100dvh] w-[100vw] sm:h-auto sm:max-h-[90svh] sm:w-[600px]
-          overflow-hidden rounded-none sm:rounded-xl shadow flex flex-col min-h-0
-        "
-      >
-        {/* Header */}
-        <div className="border-b px-4 py-3 flex items-center justify-between">
-          <div className="text-base font-semibold">{mode === "create" ? "New Item" : "Edit Item"}</div>
-          <button onClick={onClose} className="text-sm underline">Close</button>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      size="responsive"
+      className="overflow-hidden"
+    >
+      <ModalHeader>
+        <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          {mode === "create" ? "New Item" : "Edit Item"}
+        </div>
+      </ModalHeader>
+
+      <ModalBody className="space-y-6">
+        {/* Name */}
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Name (emoji ok, e.g. 🍌)</div>
+          <input
+            className={cn(
+              "input",
+              "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+            )}
+            placeholder="e.g. 🍎 Apple Fuji"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
 
-        {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4 space-y-4
-                        [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
-          {/* Name */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Name (emoji ok, e.g. 🍌)</div>
-            <input
-              className="border rounded p-3 w-full"
-              placeholder="e.g. 🍎 Apple Fuji"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+        {/* Category */}
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Category</div>
+          <div className="flex gap-2">
+            <select
+              className={cn(
+                "input",
+                "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+              )}
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+            >
+              <option value="">— None —</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className={cn(
+                "px-3 py-2 border rounded text-sm",
+                "border-gray-300 bg-white hover:bg-gray-50",
+                "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              )}
+              onClick={() => setAddingCat(v => !v)}
+              disabled={busy}
+            >
+              {addingCat ? "Cancel" : "New"}
+            </button>
           </div>
 
-          {/* Category */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Category</div>
-            <div className="flex gap-2">
-              <select
-                className="border rounded p-3 w-full"
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
+          {addingCat && (
+            <div className="flex gap-2 mt-2">
+              <input
+                className={cn(
+                  "input",
+                  "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+                )}
+                placeholder='e.g. "Fruit", "Meat"'
+                value={newCat}
+                onChange={(e) => setNewCat(e.target.value)}
+              />
+              <button
+                type="button"
+                className={cn(
+                  "px-3 py-2 rounded text-white text-sm",
+                  "bg-primary-600 hover:bg-primary-700",
+                  "focus:outline-none focus:ring-2 focus:ring-primary-500",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+                onClick={createCategory}
+                disabled={addingCat || !newCat.trim()}
               >
-                <option value="">— None —</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <button className="px-3 py-2 border rounded" onClick={() => setAddingCat(v => !v)}>
-                {addingCat ? "Cancel" : "New"}
+                {addingCat ? "Adding…" : "Add"}
               </button>
             </div>
-
-            {addingCat && (
-              <div className="flex gap-2 mt-2">
-                <input
-                  className="border rounded p-3 w-full"
-                  placeholder='e.g. "Fruit", "Meat"'
-                  value={newCat}
-                  onChange={(e) => setNewCat(e.target.value)}
-                />
-                <button
-                  className="px-3 py-2 rounded text-white bg-[var(--color-primary-600)] hover:bg-[var(--color-primary-700)]"
-                  onClick={createCategory}
-                >
-                  Add
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Unit */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Price unit</div>
-            <div className="flex gap-3">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={unit === "PCS"}
-                  onChange={() => setUnit("PCS")}
-                  // allowed in both modes
-                />
-                per PCS
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={unit === "KG"}
-                  onChange={() => setUnit("KG")}
-                  disabled={stockMode === "TRACK"} // cannot choose KG while tracking
-                />
-                per KG
-              </label>
-            </div>
-            {stockMode === "TRACK" && <div className="text-xs text-gray-500">Per KG is disabled while tracking stock.</div>}
-          </div>
-
-          {/* Stock mode */}
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Stock mode</div>
-            <div className="flex gap-3">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={stockMode === "TRACK"}
-                  onChange={() => setStockMode("TRACK")}
-                  disabled={unit === "KG"} // cannot track KG
-                />
-                Have Stock (tracked)
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  checked={stockMode === "RESELL"}
-                  onChange={() => setStockMode("RESELL")}
-                />
-                Resell (no stock)
-              </label>
-            </div>
-            {unit === "KG" && <div className="text-xs text-gray-500">Per KG items are always “Resell (no stock)”.</div>}
-          </div>
-
-          {/* Price / Cost / Stock */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Price (Rp / {unitLabel})</div>
-              <input
-                type="number" min={0} step={100}
-                className="border rounded p-3 w-full"
-                value={price}
-                onChange={(e) => setPrice(Number(e.target.value || 0))}
-              />
-              <div className="text-xs text-gray-500">Shown as Rp {pricePreview} / {unitLabel}</div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Cost Price (Rp / {unitLabel})</div>
-              <input
-                type="number" min={0} step={100}
-                className="border rounded p-3 w-full"
-                value={costPrice}
-                onChange={(e) => setCostPrice(Number(e.target.value || 0))}
-              />
-              <div className="text-xs text-gray-500">Rp {costPreview} / {unitLabel}</div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Stock {stockMode === "RESELL" && "(not tracked)"}</div>
-              <input
-                type="number" min={0}
-                className="border rounded p-3 w-full disabled:bg-gray-100"
-                value={stock}
-                onChange={(e) => setStock(Number(e.target.value || 0))}
-                disabled={stockMode === "RESELL"}
-              />
-              {stockMode === "TRACK" && <div className="text-xs text-gray-500">Tracked as integers (pcs).</div>}
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Footer */}
-        <div className="border-t px-4 py-3 pb-[env(safe-area-inset-bottom)] flex items-center justify-between">
-          <div className="text-sm text-gray-600">
+        {/* Unit */}
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Price unit</div>
+          <div className="flex gap-3">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                checked={unit === "PCS"}
+                onChange={() => setUnit("PCS")}
+                // allowed in both modes
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">per PCS</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                checked={unit === "KG"}
+                onChange={() => setUnit("KG")}
+                disabled={stockMode === "TRACK"} // cannot choose KG while tracking
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">per KG</span>
+            </label>
+          </div>
+          {stockMode === "TRACK" && <div className="text-xs text-gray-500 dark:text-gray-400">Per KG is disabled while tracking stock.</div>}
+        </div>
+
+        {/* Stock mode */}
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Stock mode</div>
+          <div className="flex gap-3">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                checked={stockMode === "TRACK"}
+                onChange={() => setStockMode("TRACK")}
+                disabled={unit === "KG"} // cannot track KG
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">Have Stock (tracked)</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                checked={stockMode === "RESELL"}
+                onChange={() => setStockMode("RESELL")}
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">Resell (no stock)</span>
+            </label>
+          </div>
+          {unit === "KG" && <div className="text-xs text-gray-500 dark:text-gray-400">Per KG items are always "Resell (no stock)".</div>}
+        </div>
+
+        {/* Price / Cost / Stock */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Price (Rp / {unitLabel})</div>
+            <input
+              type="number" min={0} step={unit === "KG" ? 0.01 : 100}
+              className={cn(
+                "input",
+                "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+              )}
+              value={price}
+              onChange={(e) => setPrice(Number(e.target.value || 0))}
+            />
+            <div className="text-xs text-gray-500 dark:text-gray-400">Shown as Rp {pricePreview} / {unitLabel}</div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Cost Price (Rp / {unitLabel})</div>
+            <input
+              type="number" min={0} step={unit === "KG" ? 0.01 : 100}
+              className={cn(
+                "input",
+                "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
+              )}
+              value={costPrice}
+              onChange={(e) => setCostPrice(Number(e.target.value || 0))}
+            />
+            <div className="text-xs text-gray-500 dark:text-gray-400">Rp {costPreview} / {unitLabel}</div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Stock {stockMode === "RESELL" && "(not tracked)"}</div>
+            <input
+              type="number" min={0}
+              className={cn(
+                "input disabled:bg-gray-100",
+                "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:disabled:bg-gray-900"
+              )}
+              value={stock}
+              onChange={(e) => setStock(Number(e.target.value || 0))}
+              disabled={stockMode === "RESELL"}
+            />
+            {stockMode === "TRACK" && <div className="text-xs text-gray-500 dark:text-gray-400">Tracked as integers (pcs).</div>}
+          </div>
+        </div>
+      </ModalBody>
+
+      <ModalFooter>
+        <div className="flex items-center justify-between w-full">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
             {isValid ? `Unit: ${unitLabel} • ${stockMode === "TRACK" ? "Stock tracked" : "Resell"}` : "Fill required fields"}
           </div>
           <div className="flex gap-2">
-            <button className="px-4 py-3 border rounded" onClick={onClose} disabled={busy}>Cancel</button>
             <button
-              className="px-4 py-3 rounded text-white bg-[var(--color-primary-600)] hover:bg-[var(--color-primary-700)]
-                         disabled:opacity-50 disabled:cursor-not-allowed"
+              type="button"
+              className={cn(
+                "btn btn-secondary btn-md",
+                "dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              )}
+              onClick={onClose}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "btn btn-primary btn-md",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
               onClick={save}
               disabled={!isValid || busy}
             >
@@ -335,7 +376,7 @@ export default function EditItemModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </ModalFooter>
+    </Modal>
   );
 }
