@@ -40,7 +40,7 @@ function startOfDay(d: Date) { const x = new Date(d); x.setHours(0,0,0,0); retur
 function endOfDay(d: Date)   { const x = new Date(d); x.setHours(23,59,59,999); return x; }
 function addDays(d: Date, n: number) { const x = new Date(d); x.setDate(x.getDate()+n); return x; }
 function rangeBounds(range: Range, anchor: Date) {
-  if (range === "All") return { from: new Date(0), to: new Date() }; // Use current date instead of anchor
+  if (range === "All") return { from: new Date(0), to: endOfDay(anchor) }; // Use anchor date for "to"
   if (range === "Today") return { from: startOfDay(anchor), to: endOfDay(anchor) };
   if (range === "This Week") {
     const day = (anchor.getDay() + 6) % 7; // Monday=0
@@ -178,6 +178,13 @@ function OrderRow({ o, children, right }: React.PropsWithChildren<{ o: Order; ri
 ----------------------------- */
 function CompactCalendar({ value, onChange }: { value: Date; onChange: (d: Date) => void }) {
   const [monthStart, setMonthStart] = useState(new Date(value.getFullYear(), value.getMonth(), 1));
+  
+  // Update monthStart when value changes (when user selects a date)
+  useEffect(() => {
+    const newMonthStart = new Date(value.getFullYear(), value.getMonth(), 1);
+    setMonthStart(newMonthStart);
+  }, [value]);
+  
   const firstDay = new Date(monthStart).getDay();
   const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
   const todayKey = new Date().toDateString();
@@ -231,6 +238,7 @@ function MiniCalendarButton({ value, onChange }: { value: Date; onChange: (d: Da
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, right: 'auto' });
   const buttonRef = useRef<HTMLDivElement>(null);
+  const calendarRef = useRef<HTMLDivElement>(null);
   
   // Calculate position when opening
   const updatePosition = () => {
@@ -259,7 +267,11 @@ function MiniCalendarButton({ value, onChange }: { value: Date; onChange: (d: Da
   // Close calendar when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      // Check if click is outside both button and calendar
+      if (buttonRef.current && calendarRef.current &&
+          !buttonRef.current.contains(target) &&
+          !calendarRef.current.contains(target)) {
         setOpen(false);
       }
     };
@@ -301,6 +313,7 @@ function MiniCalendarButton({ value, onChange }: { value: Date; onChange: (d: Da
       
       {open && typeof window !== 'undefined' && (
         <div
+          ref={calendarRef}
           className="fixed z-50 w-80 max-w-[90vw] rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-800"
           role="dialog"
           style={{
@@ -340,6 +353,9 @@ export default function DashboardPage() {
   const [recentUndelivered, setRecentUndelivered] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Calculate bounds before useEffect to avoid dependency issues
+  const bounds = useMemo(() => rangeBounds(range, anchor), [range, anchor]);
+
   useEffect(() => {
     let isMounted = true;
     
@@ -349,10 +365,9 @@ export default function DashboardPage() {
         
         // Build query params for date range and search
         const params = new URLSearchParams();
-        if (range !== "All") {
-          params.append("from", bounds.from.toISOString());
-          params.append("to", bounds.to.toISOString());
-        }
+        // Always send date range to API, even for "All" range
+        params.append("from", bounds.from.toISOString());
+        params.append("to", bounds.to.toISOString());
         if (q) {
           params.append("search", q);
         }
@@ -431,9 +446,8 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [range, anchor, q]); // Add dependencies for refetching when range, anchor, or search changes
+  }, [range, anchor, q, bounds]); // Add dependencies for refetching when range, anchor, search, or bounds changes
 
-  const bounds = useMemo(() => rangeBounds(range, anchor), [range, anchor]);
   const itemsMap = useMemo(() => Object.fromEntries(items.map((i) => [i.id, i])), [items]);
 
   // All orders in window & search (createdAt)
@@ -529,8 +543,8 @@ export default function DashboardPage() {
               <LoadingSkeleton />
               <LoadingSkeleton />
             </div>
-          ) : recentUnpaid.length ? (
-            recentUnpaid.map((o) => (
+          ) : filteredUnpaid.length ? (
+            filteredUnpaid.map((o) => (
               <OrderRow key={`unpaid-${o.id}`} o={o} right={<span className="font-semibold">{moneyIDR(o.total)}</span>}>
                 <Pill>unpaid</Pill>
               </OrderRow>
@@ -547,8 +561,8 @@ export default function DashboardPage() {
               <LoadingSkeleton />
               <LoadingSkeleton />
             </div>
-          ) : recentUndelivered.length ? (
-            recentUndelivered.map((o) => (
+          ) : filteredUndelivered.length ? (
+            filteredUndelivered.map((o) => (
               <OrderRow key={`undelivered-${o.id}`} o={o} right={<span className="font-semibold">{moneyIDR(o.total)}</span>}>
                 <Pill>undelivered</Pill>
               </OrderRow>
