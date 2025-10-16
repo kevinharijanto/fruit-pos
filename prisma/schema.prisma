@@ -56,6 +56,9 @@ model Customer {
   whatsapp  String?  @unique
   orders    Order[]
   createdAt DateTime @default(now())
+
+  @@index([name], map: "idx_customer_name")
+  @@index([whatsapp], map: "idx_customer_whatsapp")
 }
 
 model Category {
@@ -94,6 +97,11 @@ model Item {
 
   // back relation to order lines
   OrderItem  OrderItem[]
+  SellerOrderItem SellerOrderItem[]
+
+  @@index([categoryId], map: "idx_items_category_id")
+  @@index([unit], map: "idx_items_unit")
+  @@index([stockMode], map: "idx_items_stock_mode")
 }
 
 model Order {
@@ -119,6 +127,71 @@ model Order {
 
   items       OrderItem[]
   createdAt   DateTime   @default(now())
+
+  @@index([createdAt(sort: Desc)], map: "idx_orders_created_at")
+  @@index([paymentStatus], map: "idx_orders_payment_status")
+  @@index([deliveryStatus], map: "idx_orders_delivery_status")
+  @@index([customerId], map: "idx_orders_customer_id")
+  @@index([paymentStatus, createdAt(sort: Desc)], map: "idx_orders_status_date")
+  @@index([deliveryStatus, createdAt(sort: Desc)], map: "idx_orders_delivery_date")
+}
+
+model Seller {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  whatsapp  String?  @unique
+  orders    SellerOrder[]
+  createdAt DateTime @default(now())
+
+  @@index([name], map: "idx_seller_name")
+  @@index([whatsapp], map: "idx_seller_whatsapp")
+}
+
+model SellerOrder {
+  id          String     @id @default(cuid())
+  sellerId    String?
+  seller      Seller?    @relation(fields: [sellerId], references: [id])
+
+  paymentStatus  PaymentStatus  @default(unpaid)
+  deliveryStatus DeliveryStatus @default(pending)
+
+  paidAt      DateTime?
+  deliveredAt DateTime?
+
+  paymentType String?
+  deliveryNote String?
+
+  subtotal    Int
+  discount    Int        @default(0)
+  deliveryFee Int        @default(0)
+  total       Int
+
+  items       SellerOrderItem[]
+  createdAt   DateTime   @default(now())
+
+  @@index([createdAt(sort: Desc)], map: "idx_seller_orders_created_at")
+  @@index([paymentStatus], map: "idx_seller_orders_payment_status")
+  @@index([deliveryStatus], map: "idx_seller_orders_delivery_status")
+  @@index([sellerId], map: "idx_seller_orders_seller_id")
+  @@index([paymentStatus, createdAt(sort: Desc)], map: "idx_seller_orders_status_date")
+  @@index([deliveryStatus, createdAt(sort: Desc)], map: "idx_seller_orders_delivery_date")
+}
+
+model SellerOrderItem {
+  id      String @id @default(cuid())
+  orderId String
+  itemId  String
+
+  order SellerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  item  Item        @relation(fields: [itemId], references: [id])
+
+  qty   Decimal
+  price Int
+
+  @@index([orderId], map: "idx_seller_order_items_order_id")
+  @@index([itemId], map: "idx_seller_order_items_item_id")
+  @@index([orderId, itemId], map: "idx_seller_order_items_composite")
 }
 
 model OrderItem {
@@ -131,4 +204,8 @@ model OrderItem {
 
   qty   Decimal
   price Int
+
+  @@index([orderId], map: "idx_order_items_order_id")
+  @@index([itemId], map: "idx_order_items_item_id")
+  @@index([orderId, itemId], map: "idx_order_items_composite")
 }

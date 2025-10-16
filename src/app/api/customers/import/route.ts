@@ -127,14 +127,14 @@ export async function POST(req: Request) {
           updated++;
         } else {
           await prisma.customer.create({
-            data: { name: name || null, address: address || null, whatsapp },
+            data: { name: name || "", address: address || null, whatsapp },
           });
           created++;
         }
       } else {
         // No whatsapp → always create a new row (cannot match deterministically)
         await prisma.customer.create({
-          data: { name: name || null, address: address || null, whatsapp: null },
+          data: { name: name || "", address: address || null, whatsapp: null },
         });
         created++;
       }

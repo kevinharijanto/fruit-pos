@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
-type Params = { params: { id: string } };
+type Params = { params: Promise<{ id: string }> };
 
 export const runtime = "nodejs";
 
 /** PATCH /api/items/:id */
 export async function PATCH(req: Request, { params }: Params) {
-  const id = params.id;
+  const { id } = await params;
   const b = await req.json();
 
   const data: any = {};
@@ -58,6 +58,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
 /** DELETE /api/items/:id */
 export async function DELETE(_req: Request, { params }: Params) {
-  await prisma.item.delete({ where: { id: params.id } });
+  const { id } = await params;
+  await prisma.item.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

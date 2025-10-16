@@ -6,9 +6,18 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const categories = await prisma.category.findMany({
+      select: {
+        id: true,
+        name: true,
+        createdAt: true
+      },
       orderBy: { name: "asc" },
     });
-    return NextResponse.json(categories);
+    
+    // Cache for 10 minutes - categories rarely change
+    const response = NextResponse.json(categories);
+    response.headers.set('Cache-Control', 'public, max-age=600, s-maxage=600');
+    return response;
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Failed to load categories" }, { status: 500 });
   }

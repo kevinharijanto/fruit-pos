@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Modal, { ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
+import { cn } from "@/lib/utils";
 
 export type Customer = {
   id?: string;
@@ -30,12 +32,6 @@ export default function EditCustomerModal({
     () => digits.replace(/\D/g, "").replace(/(.{4})/g, "$1 ").trim(),
     [digits]
   );
-
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, []);
 
   const valid = (name.trim().length > 0) || !!digits;
 
@@ -76,64 +72,85 @@ export default function EditCustomerModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50">
-      <div className="fixed inset-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2
-                      bg-white h-[100dvh] w-[100vw] sm:h-auto sm:max-h-[90svh] sm:w-[700px]
-                      overflow-hidden rounded-none sm:rounded-xl shadow flex flex-col min-h-0">
-        {/* Header */}
-        <div className="border-b px-5 py-4 flex items-center justify-between">
-          <div className="text-xl font-semibold">{mode === "create" ? "New Customer" : "Edit Customer"}</div>
-          <button onClick={onClose} className="text-base underline">Close</button>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      size="responsive"
+      className="overflow-hidden"
+    >
+      <ModalHeader>
+        <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          {mode === "create" ? "New Customer" : "Edit Customer"}
         </div>
+      </ModalHeader>
 
-        {/* Content */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 py-5 space-y-6
-                        [-webkit-overflow-scrolling:touch] [touch-action:pan-y]">
-          <section className="space-y-3">
-            <div className="text-base font-medium">Name</div>
-            <input
-              className="border rounded p-4 w-full text-base"
-              placeholder="e.g. Ibu Sari"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
+      <ModalBody className="space-y-6">
+        <section className="space-y-3">
+          <div className="text-base font-medium text-gray-900 dark:text-gray-100">Name</div>
+          <input
+            className={cn(
+              "input text-base",
+              "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+            )}
+            placeholder="e.g. Ibu Sari"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
 
-            <div className="text-base font-medium">Phone number</div>
-            <div className="flex">
-              <div className="px-4 py-4 border rounded-l bg-gray-50 select-none text-base">+62</div>
-              <input
-                inputMode="numeric"
-                className="border border-l-0 rounded-r p-4 w-full text-base"
-                placeholder="8123 456 789"
-                value={phoneDisplay}
-                onChange={(e) => setDigits(e.target.value.replace(/\D/g, ""))}
-              />
+          <div className="text-base font-medium text-gray-900 dark:text-gray-100">Phone number</div>
+          <div className="flex">
+            <div className={cn(
+              "px-4 py-4 border rounded-l bg-gray-50 select-none text-base",
+              "dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+            )}>
+              +62
             </div>
-            <div className="text-[12px] text-gray-500">Stored as {fullWA || "—"}</div>
-
-            <div className="text-base font-medium">Address</div>
             <input
-              className="border rounded p-4 w-full text-base"
-              placeholder="Street, house no., etc."
-              value={address ?? ""}
-              onChange={(e) => setAddress(e.target.value)}
+              inputMode="numeric"
+              className={cn(
+                "input border-l-0 rounded-r text-base",
+                "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+              )}
+              placeholder="8123 456 789"
+              value={phoneDisplay}
+              onChange={(e) => setDigits(e.target.value.replace(/\D/g, ""))}
             />
-          </section>
-        </div>
+          </div>
+          <div className="text-sm text-gray-500 dark:text-gray-400">Stored as {fullWA || "—"}</div>
 
-        {/* Footer */}
-        <div className="border-t px-5 py-4 pb-[env(safe-area-inset-bottom)] flex items-center justify-end gap-3">
-          <button className="px-5 py-3 border rounded text-base" onClick={onClose}>Cancel</button>
+          <div className="text-base font-medium text-gray-900 dark:text-gray-100">Address</div>
+          <input
+            className={cn(
+              "input text-base",
+              "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
+            )}
+            placeholder="Street, house no., etc."
+            value={address ?? ""}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+        </section>
+      </ModalBody>
+
+      <ModalFooter>
+        <div className="flex items-center justify-end gap-3 w-full">
           <button
-            className="px-5 py-3 rounded text-white bg-green-600 hover:bg-green-700 active:bg-green-800
-                       text-base focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-600 disabled:opacity-50"
+            className="btn btn-secondary btn-md text-base dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            className={cn(
+              "btn btn-primary btn-md text-base",
+              "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-600"
+            )}
             onClick={save}
             disabled={!valid}
           >
             Save Changes
           </button>
         </div>
-      </div>
-    </div>
+      </ModalFooter>
+    </Modal>
   );
 }

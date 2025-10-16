@@ -1,7 +1,6 @@
 // src/app/api/orders/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma, PaymentStatus, DeliveryStatus } from "@prisma/client";
 
 export const runtime = "nodejs";
 
@@ -32,23 +31,68 @@ function qtyForUnit(rawQty: unknown, unit: "PCS" | "KG"): number {
 /* ---------------------------
    GET /api/orders
 --------------------------- */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const orders = await prisma.order.findMany({
-      orderBy: { createdAt: "desc" },
-      include: {
-        customer: { select: { name: true, whatsapp: true, address: true } },
-        items: {
-          include: {
-            item: { select: { name: true } },
+    // Add cache control for slightly stale data (30 seconds for orders, 5 minutes for items)
+    const response = NextResponse.next();
+    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    const url = new URL(req.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1"));
+    const limit = Math.min(100, Math.max(10, parseInt(url.searchParams.get("limit") || "25")));
+    const search = (url.searchParams.get("search") || "").trim();
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    
+    if (search) {
+      where.OR = [
+        { customer: { name: { contains: search, mode: "insensitive" } } },
+        { customer: { whatsapp: { contains: search, mode: "insensitive" } } },
+        { customer: { address: { contains: search, mode: "insensitive" } } },
+        { deliveryNote: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          paymentStatus: true,
+          deliveryStatus: true,
+          paidAt: true,
+          deliveredAt: true,
+          deliveryNote: true,
+          paymentType: true,
+          subtotal: true,
+          discount: true,
+          deliveryFee: true,
+          total: true,
+          createdAt: true,
+          customer: {
+            select: { name: true, whatsapp: true, address: true }
+          },
+          items: {
+            select: {
+              id: true,
+              itemId: true,
+              qty: true,
+              price: true,
+              item: { select: { name: true } },
+            },
           },
         },
-      },
-      take: 1000,
-    });
+        skip,
+        take: limit,
+      }),
+      prisma.order.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
 
     // Serialize to plain JSON (Decimal -> number, Date -> ISO)
-    const data = orders.map((o) => ({
+    const data = orders.map((o: any) => ({
       id: o.id,
       paymentStatus: o.paymentStatus,
       deliveryStatus: o.deliveryStatus,
@@ -68,7 +112,7 @@ export async function GET() {
             address: o.customer.address ?? null,
           }
         : null,
-      items: o.items.map((li) => ({
+      items: o.items.map((li: any) => ({
         id: li.id,
         itemId: li.itemId,
         // qty is Decimal in DB -> convert for client
@@ -78,7 +122,17 @@ export async function GET() {
       })),
     }));
 
-    return NextResponse.json(data);
+    return NextResponse.json({
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+    });
   } catch (e: any) {
     console.error("GET /api/orders failed:", e);
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
@@ -126,18 +180,18 @@ export async function POST(req: NextRequest) {
       select: { id: true, unit: true, price: true },
     });
     const byId = new Map(
-      catalog.map((i) => [i.id, { unit: (i.unit as "PCS" | "KG") || "PCS", price: i.price }]),
+      catalog.map((i: any) => [i.id, { unit: (i.unit as "PCS" | "KG") || "PCS", price: i.price }]),
     );
 
     // 2) Build order lines with normalized qty (PCS int, KG one decimal), and snapshot price
     const lines = items.map((l: any) => {
       const meta = byId.get(String(l.itemId));
       if (!meta) throw new Error("Invalid item");
-      const qty = qtyForUnit(l.qty, meta.unit);
+      const qty = qtyForUnit(l.qty, (meta as any).unit);
       return {
         itemId: String(l.itemId),
         qty,
-        price: meta.price, // snapshot current price
+        price: (meta as any).price, // snapshot current price
       };
     });
 
@@ -148,7 +202,7 @@ export async function POST(req: NextRequest) {
     const total = Math.max(0, subtotal - discount + deliveryFee);
 
     // 4) Customer relation (connect by WA if exists)
-    let customerRel: Prisma.OrderCreateInput["customer"] | undefined;
+    let customerRel: any;
     if (customer && (customer.name || customer.address || customer.whatsapp)) {
       const name = String(customer.name || "");
       const address = customer.address ? String(customer.address) : null;
@@ -175,28 +229,28 @@ export async function POST(req: NextRequest) {
     }
 
     // 5) Create order + nested items (pass Decimal as string to be safe)
-    // Map strings -> Prisma enums (imported enum objects)
+    // Map strings -> enum values
     // Pick enums via direct conditionals (no object lookup)
     const rawPay  = paymentStatus ?? (paid ? "paid" : "unpaid");
     const rawShip = deliveryStatus ?? (delivered ? "delivered" : "pending");
-    const payKey  = String(rawPay).toLowerCase().trim() as any;
-    const shipKey = String(rawShip).toLowerCase().trim() as any;
+    const payKey  = String(rawPay).toLowerCase().trim();
+    const shipKey = String(rawShip).toLowerCase().trim();
     const payEnum  =
-      payKey === "paid"      ? PaymentStatus.paid
-    : payKey === "refunded"  ? PaymentStatus.refunded
-    :                          PaymentStatus.unpaid;
+      payKey === "paid"      ? "paid"
+    : payKey === "refunded"  ? "refunded"
+    :                          "unpaid";
     const shipEnum =
-      shipKey === "delivered" ? DeliveryStatus.delivered
-    : shipKey === "failed"    ? DeliveryStatus.failed
-    :                           DeliveryStatus.pending;
+      shipKey === "delivered" ? "delivered"
+    : shipKey === "failed"    ? "failed"
+    :                           "pending";
 
 
     const order = await prisma.order.create({
       data: {
         paymentStatus:  payEnum,
         deliveryStatus: shipEnum,
-        paidAt:        payEnum  === PaymentStatus.paid        ? new Date() : null,
-        deliveredAt:   shipEnum === DeliveryStatus.delivered  ? new Date() : null,
+        paidAt:        payEnum  === "paid"        ? new Date() : null,
+        deliveredAt:   shipEnum === "delivered"  ? new Date() : null,
         paymentType: (paymentType as any) ?? null,
         deliveryNote: deliveryNote ?? null,
         subtotal,

@@ -1,23 +1,93 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
 
 export const runtime = "nodejs";
 
-/** GET /api/items */
-export async function GET() {
+/** GET /api/items?page=1&limit=10&cat=category&q=search */
+export async function GET(req: NextRequest) {
+  const url = new URL(req.url);
+  const page = parseInt(url.searchParams.get("page") || "1");
+  const limit = parseInt(url.searchParams.get("limit") || "10");
+  const cat = url.searchParams.get("cat"); // optional category filter
+  const q = (url.searchParams.get("q") || "").trim(); // search query
+
+  // Build where clause
+  const where: any = {};
+  
+  if (cat && cat !== "ALL") {
+    where.categoryId = cat;
+  }
+  
+  if (q) {
+    where.OR = [
+      { name: { contains: q, mode: 'insensitive' } },
+      { category: { name: { contains: q, mode: 'insensitive' } } }
+    ];
+  }
+
+  // Get total count for pagination
+  const total = await prisma.item.count({ where });
+
+  // When searching, return all results without pagination
+  // Otherwise, use pagination for normal browsing
+  const shouldPaginate = !q;
+  const skip = shouldPaginate ? (page - 1) * limit : 0;
+  const take = shouldPaginate ? limit : undefined;
+
+  // Get results - select only needed fields
   const items = await prisma.item.findMany({
+    where,
     orderBy: { name: "asc" },
-    include: { category: true },
+    select: {
+      id: true,
+      name: true,
+      price: true,
+      costPrice: true,
+      unit: true,
+      stockMode: true,
+      stock: true,
+      createdAt: true,
+      updatedAt: true,
+      categoryId: true,
+      category: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    },
+    skip,
+    take,
   });
 
   // Convert Decimal -> number for JSON
-  const out = items.map((it) => ({
+  const out = items.map((it: any) => ({
     ...it,
     stock: Number(it.stock),
   }));
 
-  return NextResponse.json(out);
+  // Return different response format based on whether we're searching or paginating
+  if (q) {
+    // When searching, return all results without pagination info
+    const response = NextResponse.json(out);
+    response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=300');
+    return response;
+  } else {
+    // When browsing normally, return paginated results
+    const response = NextResponse.json({
+      data: out,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrev: page > 1
+      }
+    });
+    response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=300');
+    return response;
+  }
 }
 
 /** POST /api/items */
@@ -56,7 +126,7 @@ export async function POST(req: Request) {
       costPrice,
       unit,
       stockMode,
-      stock: new Prisma.Decimal(stockNum),
+      stock: stockNum,
       ...(categoryId ? { categoryId } : {}),
     },
     include: { category: true },

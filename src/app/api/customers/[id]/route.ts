@@ -15,8 +15,8 @@ export const runtime = "nodejs";
 
 // PATCH /api/customers/:id
 // body: any subset of { name?: string, address?: string, whatsapp?: string }
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const body = await req.json();
 
   const data: any = {};
@@ -38,8 +38,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE /api/customers/:id
-export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
-  const id = params.id;
+export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   try {
     const used = await prisma.order.count({ where: { customerId: id } });
     if (used > 0) {

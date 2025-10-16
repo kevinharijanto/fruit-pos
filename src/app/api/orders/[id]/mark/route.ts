@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string }}) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const body = await req.json(); // { paymentStatus?, deliveryStatus?, paid?, delivered? }
   const data: any = {};
 
@@ -26,6 +27,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data.deliveredAt = body.delivered ? new Date() : null;
   }
 
-  const order = await prisma.order.update({ where: { id: params.id }, data, include: { customer: true, items: { include: { item: true } } } });
+  const order = await prisma.order.update({ where: { id }, data, include: { customer: true, items: { include: { item: true } } } });
   return NextResponse.json(order);
 }

@@ -1,10 +1,11 @@
 // src/app/orders/page.client.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import EditOrderModal from "@/components/EditOrderModal";
+import Pagination from "@/components/ui/Pagination";
 
 /* =========================
    Types
@@ -47,6 +48,19 @@ function idr(n: number) {
 }
 function pad2(n: number) {
   return n < 10 ? `0${n}` : `${n}`;
+}
+
+// "15 October 2025 18:21"
+function formatDateWithTime(dateStr: string) {
+  const d = new Date(dateStr);
+  const day = pad2(d.getDate());
+  const months = [
+    "January","February","March","April","May","June",
+    "July","August","September","October","November","December",
+  ];
+  const hours = pad2(d.getHours());
+  const minutes = pad2(d.getMinutes());
+  return `${day} ${months[d.getMonth()]} ${d.getFullYear()} ${hours}:${minutes}`;
 }
 
 // "11 October 2025"
@@ -159,20 +173,92 @@ function GridIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+function MoreVerticalIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      <path fill="currentColor" d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+    </svg>
+  );
+}
+
+// Dropdown menu component
+function DropdownMenu({ children, trigger }: { children: React.ReactNode; trigger: React.ReactNode }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        aria-label="More options"
+      >
+        {trigger}
+      </button>
+      {isOpen && (
+        <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-lg z-10">
+          <div className="py-1">
+            {children}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DropdownMenuItem({
+  children,
+  onClick,
+  className = "",
+  danger = false,
+  disabled = false
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  className?: string;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+        danger ? "text-red-600 dark:text-red-400" : "text-gray-700 dark:text-gray-300"
+      } ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 const btnIcon =
-  "inline-flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-xl border shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1";
+  "inline-flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-lg border shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition-all duration-200";
 
 /* =========================
    Small UI helpers
 ========================= */
 function StatusBadge({ s }: { s: BadgeStatus }) {
   const map: Record<BadgeStatus, string> = {
-    "In Progress": "bg-yellow-100 text-yellow-800 border border-yellow-200",
-    "Delivered but Not Paid": "bg-orange-100 text-orange-800 border border-orange-200",
-    "Paid but Not Delivered": "bg-blue-100 text-blue-800 border border-blue-200",
-    "Done": "bg-green-100 text-green-800 border border-green-200",
+    "In Progress": "badge-warning",
+    "Delivered but Not Paid": "badge-orange",
+    "Paid but Not Delivered": "badge-blue",
+    "Done": "badge-success",
   };
-  return <span className={`px-2 py-1 rounded text-xs whitespace-nowrap ${map[s]}`}>{s}</span>;
+  return <span className={`${map[s]}`}>{s}</span>;
 }
 
 function asNumber(v: any): number {
@@ -190,6 +276,14 @@ function asNumber(v: any): number {
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 25,
+    total: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrev: false,
+  });
 
   const [filter, setFilter] = useState<StatusFilter>(() => {
     if (typeof window === "undefined") return "Unfinished";
@@ -212,6 +306,8 @@ export default function OrdersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("edit");
   const [modalOrder, setModalOrder] = useState<any>(null);
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   const params = useSearchParams();
   const waFilter = params.get("wa");
@@ -221,18 +317,41 @@ export default function OrdersPage() {
     localStorage.setItem("orders.view", view);
   }, [view]);
 
-  async function load() {
+  async function load(page = 1, search = "") {
     setLoading(true);
-    const res = await fetch("/api/orders", { cache: "no-store" });
-    const data: Order[] = await res.json();
-    setOrders(Array.isArray(data) ? data : []);
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: pagination.limit.toString(),
+    });
+    if (search) params.append("search", search);
+    
+    const res = await fetch(`/api/orders?${params}`, { cache: "no-store" });
+    const response = await res.json();
+    
+    if (response.data && response.pagination) {
+      setOrders(Array.isArray(response.data) ? response.data : []);
+      setPagination(response.pagination);
+    } else {
+      // Fallback for backward compatibility
+      setOrders(Array.isArray(response) ? response : []);
+    }
     setLoading(false);
   }
   useEffect(() => {
     load();
     (async () => {
-      const arr: any[] = await (await fetch("/api/items", { cache: "no-store" })).json();
-      const mapped: ItemRef[] = (Array.isArray(arr) ? arr : []).map((i) => ({
+      const response = await fetch("/api/items", { cache: "no-store" });
+      const json = await response.json();
+      
+      // Handle new paginated format or fallback to old format
+      let arr: any[] = [];
+      if (json.data && Array.isArray(json.data)) {
+        arr = json.data;
+      } else if (Array.isArray(json)) {
+        arr = json;
+      }
+      
+      const mapped: ItemRef[] = arr.map((i) => ({
         id: i.id,
         name: i.name,
         price: asNumber(i.price),
@@ -317,49 +436,131 @@ export default function OrdersPage() {
     setModalOpen(true);
   }
 
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+
   async function onDelete(id: string) {
+    if (deletingOrderId === id) return; // Prevent multiple calls
     if (!confirm("Delete this order? Stock will be returned.")) return;
-    const res = await fetch(`/api/orders/${id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const t = await res.text();
-      alert("Failed to delete: " + t);
-      return;
+    
+    try {
+      setDeletingOrderId(id);
+      const res = await fetch(`/api/orders/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const t = await res.text();
+        alert("Failed to delete: " + t);
+        return;
+      }
+      await load(pagination.page, customerQ);
+    } catch (error) {
+      console.error("Error deleting order:", error);
+      alert("Failed to delete order");
+    } finally {
+      setDeletingOrderId(null);
     }
-    await load();
+  }
+
+  function handlePageChange(newPage: number) {
+    load(newPage, customerQ);
+  }
+
+  function handleSearch() {
+    load(1, customerQ);
+  }
+
+  function toggleExpanded(orderId: string) {
+    setExpandedItems(prev =>
+      prev.includes(orderId)
+        ? prev.filter(id => id !== orderId)
+        : [...prev, orderId]
+    );
+  }
+
+  function handleLimitChange(newLimit: number) {
+    setPagination(prev => ({ ...prev, limit: newLimit }));
+    load(1, customerQ);
+  }
+
+  async function handleQuickStatusUpdate(orderId: string, paymentStatus: string, deliveryStatus: string) {
+    if (updatingStatus === orderId) return; // Prevent multiple calls
+    
+    try {
+      setUpdatingStatus(orderId);
+      const res = await fetch(`/api/orders/${orderId}/mark`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus, deliveryStatus }),
+      });
+      
+      if (!res.ok) {
+        const error = await res.text();
+        alert("Failed to update status: " + error);
+        return;
+      }
+      
+      // Refresh the orders list
+      await load(pagination.page, customerQ);
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      alert("Failed to update status");
+    } finally {
+      setUpdatingStatus(null);
+    }
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Header / Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-xl font-semibold">Orders</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Orders</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Manage your customer orders</p>
+        </div>
 
         {waFilter && (
           <Link
             href="/orders"
-            className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+            className="badge-primary inline-flex items-center gap-1"
             title="Clear WhatsApp filter"
           >
-            WA: +{waFilter} • clear
+            WA: +{waFilter}
+            <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 6l12 12M18 6l-12 12" />
+            </svg>
           </Link>
         )}
+      </div>
 
-        <div className="ml-auto w-full sm:w-auto flex flex-wrap items-center gap-2">
+      {/* Filters Bar */}
+      <div className="p-4 bg-white rounded-xl border border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+        <div className="flex flex-wrap items-center gap-4">
           {/* Customer filter */}
-          <div className="w-full sm:w-44">
-            <input
-              className="w-full border rounded px-3 py-2 text-sm"
-              placeholder="Filter customer…"
-              value={customerQ}
-              onChange={(e) => setCustomerQ(e.target.value)}
-              title="Filter by name / phone / address"
-            />
+          <div className="flex-1 min-w-[200px]">
+            <div className="relative">
+              <input
+                className="input pr-10"
+                placeholder="Filter customer…"
+                value={customerQ}
+                onChange={(e) => setCustomerQ(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                title="Filter by name / phone / address"
+              />
+              <button
+                onClick={handleSearch}
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                title="Search"
+              >
+                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.35-4.35"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* View toggle */}
-          <div className="inline-flex rounded-xl border bg-white shadow-sm overflow-hidden shrink-0">
+          <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-600 dark:bg-gray-800">
             <button
-              className={`px-3 py-2 text-sm ${view === "cards" ? "bg-[var(--color-primary-50,#f0fdf4)] text-[var(--color-primary-800,#14532d)]" : "text-gray-600"}`}
+              className={`px-3 py-2 text-sm rounded-md ${view === "cards" ? "bg-primary-600 text-white" : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"}`}
               onClick={() => setView("cards")}
               title="Card view"
               aria-label="Card view"
@@ -367,7 +568,7 @@ export default function OrdersPage() {
               <GridIcon className="w-4 h-4" />
             </button>
             <button
-              className={`px-3 py-2 text-sm border-l ${view === "list" ? "bg-[var(--color-primary-50,#f0fdf4)] text-[var(--color-primary-800,#14532d)]" : "text-gray-600"}`}
+              className={`px-3 py-2 text-sm rounded-md ${view === "list" ? "bg-primary-600 text-white" : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"}`}
               onClick={() => setView("list")}
               title="List view"
               aria-label="List view"
@@ -377,57 +578,49 @@ export default function OrdersPage() {
           </div>
 
           {/* Status filter */}
-          <div className="w-[calc(50%-0.25rem)] sm:w-auto">
-            <select
-              className="w-full border rounded px-3 py-2 text-sm"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value as StatusFilter)}
-              title="Overall status"
-            >
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            className="input w-40"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as StatusFilter)}
+            title="Overall status"
+          >
+            {STATUS_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
 
           {/* Payment filter */}
-          <div className="w-[calc(50%-0.25rem)] sm:w-auto">
-            <select
-              className="w-full border rounded px-3 py-2 text-sm"
-              value={payFilter}
-              onChange={(e) => setPayFilter(e.target.value as any)}
-              title="Payment status"
-            >
-              <option value="all">Pay: All</option>
-              <option value="unpaid">Unpaid</option>
-              <option value="paid">Paid</option>
-              <option value="refunded">Refunded</option>
-            </select>
-          </div>
+          <select
+            className="input w-32"
+            value={payFilter}
+            onChange={(e) => setPayFilter(e.target.value as any)}
+            title="Payment status"
+          >
+            <option value="all">Pay: All</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="paid">Paid</option>
+            <option value="refunded">Refunded</option>
+          </select>
 
           {/* Delivery filter */}
-          <div className="w-[calc(50%-0.25rem)] sm:w-auto">
-            <select
-              className="w-full border rounded px-3 py-2 text-sm"
-              value={shipFilter}
-              onChange={(e) => setShipFilter(e.target.value as any)}
-              title="Delivery status"
-            >
-              <option value="all">Delivery: All</option>
-              <option value="pending">Pending</option>
-              <option value="delivered">Delivered</option>
-              <option value="failed">Failed</option>
-            </select>
-          </div>
+          <select
+            className="input w-32"
+            value={shipFilter}
+            onChange={(e) => setShipFilter(e.target.value as any)}
+            title="Delivery status"
+          >
+            <option value="all">Delivery: All</option>
+            <option value="pending">Pending</option>
+            <option value="delivered">Delivered</option>
+            <option value="failed">Failed</option>
+          </select>
 
           {/* New order button */}
           <button
             onClick={openCreate}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-white
-                       bg-[var(--color-primary-600)] hover:bg-[var(--color-primary-700)] active:bg-[var(--color-primary-800)]
-                       focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-[var(--color-primary-300)]"
+            className="btn btn-primary btn-md"
           >
             <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M12 5v14M5 12h14" />
@@ -439,80 +632,250 @@ export default function OrdersPage() {
 
       {/* Content */}
       {loading ? (
-        <div className="p-3 text-sm text-gray-500">Loading…</div>
+        <div className="text-center py-12">
+          <div className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Loading orders…
+          </div>
+        </div>
       ) : filtered.length === 0 ? (
-        <div className="p-3 text-sm text-gray-500">No orders.</div>
+        <div className="text-center py-12">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 mb-4">
+            <svg viewBox="0 0 24 24" className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">No orders found</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Try adjusting your filters or create a new order.</p>
+        </div>
       ) : view === "cards" ? (
         /* =============== CARD VIEW =============== */
-        <ul className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filtered.map((o) => {
             const s = statusText(o);
-            const date = new Date(o.createdAt).toLocaleString("id-ID");
+            const formattedDateTime = formatDateWithTime(o.createdAt);
             const itemCount = o.items.reduce((n, it) => n + it.qty, 0);
+            // Fix decimal places - show integer for PCS, 1 decimal for KG
+            const itemCountDisplay = o.items.reduce((sum, item) => {
+              const itemRef = allItems.find(i => i.id === item.itemId);
+              const unit = itemRef?.unit || "PCS";
+              if (unit === "KG") {
+                return sum + Number(item.qty);
+              } else {
+                return sum + Math.floor(Number(item.qty));
+              }
+            }, 0);
+            
             const itemsPreview = o.items
               .slice(0, 3)
-              .map((li) => `${li.item.name}×${li.qty}`)
+              .map((li) => {
+                const itemRef = allItems.find(i => i.id === li.itemId);
+                const unit = itemRef?.unit || "PCS";
+                let qty = Number(li.qty);
+                if (unit === "KG") {
+                  qty = Math.round(qty * 10) / 10; // 1 decimal place
+                } else {
+                  qty = Math.floor(qty); // integer
+                }
+                return `${li.item.name}×${qty}`;
+              })
               .join(", ");
             return (
-              <li key={o.id} className="rounded-2xl border bg-white shadow-sm p-4">
-                {/* Top row */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-semibold truncate">
-                      {o.customer?.name ?? "Walk-in"}
-                      {o.customer?.whatsapp ? <span className="text-gray-500"> • +{o.customer.whatsapp}</span> : null}
+              <li key={o.id} className="card card-hover h-full flex flex-col">
+                <div className="card-padding flex-1 flex flex-col">
+                  {/* Top row */}
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-gray-900 dark:text-gray-100 truncate text-lg">
+                        {o.customer?.name ?? "Walk-in"}
+                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        {formattedDateTime}
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-500">{date}</div>
+                    <StatusBadge s={s} />
                   </div>
-                  <StatusBadge s={s} />
-                </div>
 
-                {/* Middle */}
-                <div className="mt-3 text-sm text-gray-800">
-                  <div className="flex items-center justify-between">
-                    <div className="truncate">{itemsPreview}{o.items.length > 3 ? "…" : ""}</div>
-                    <div className="text-xs text-gray-500 ml-2 whitespace-nowrap">{itemCount} items</div>
-                  </div>
-                  {o.deliveryNote && (
-                    <div className="text-xs text-gray-500 mt-1 break-words">Note: {o.deliveryNote}</div>
-                  )}
-                  {o.customer?.address && (
-                    <div className="text-xs text-gray-600 mt-1 break-words">{o.customer.address}</div>
-                  )}
-                </div>
-
-                {/* Bottom row */}
-                <div className="mt-4 flex items-center justify-between">
-                  <div className="text-lg font-semibold">Rp {o.total.toLocaleString("id-ID")}</div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {o.customer?.whatsapp && (
-                      <a
-                        className={`${btnIcon} text-white bg-[#25D366] hover:bg-[#1ebe57] active:bg-[#17a652] focus:ring-[#25D366] border-transparent`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        href={`https://wa.me/${o.customer.whatsapp}?text=${encodeURIComponent(buildWhatsAppMessage(o))}`}
-                        title="WhatsApp"
-                        aria-label="WhatsApp"
-                      >
-                        <WhatsAppIcon className="w-5 h-5" />
-                      </a>
+                  {/* Middle */}
+                  <div className="flex-1 space-y-3">
+                    {o.deliveryNote && (
+                      <div className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 p-2 rounded-lg">
+                        <span className="font-medium">Note:</span> {o.deliveryNote}
+                      </div>
                     )}
-                    <button
-                      className={`${btnIcon} text-[var(--color-primary-800)] bg-white border-gray-300 hover:bg-gray-50`}
-                      onClick={() => openEdit(o)}
-                      title="Edit"
-                      aria-label="Edit"
-                    >
-                      <PencilIcon className="w-5 h-5" />
-                    </button>
-                    <button
-                      className={`${btnIcon} text-red-600 border-red-300 hover:bg-red-50`}
-                      onClick={() => onDelete(o.id)}
-                      title="Delete order"
-                      aria-label="Delete"
-                    >
-                      <TrashIcon className="w-5 h-5" />
-                    </button>
+                    
+                    {o.customer?.address && (
+                      <div className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                        <div className="flex items-start gap-2">
+                          <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                            <circle cx="12" cy="10" r="3"/>
+                          </svg>
+                          <span className="break-words font-medium">{o.customer.address}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Items section - hidden by default, toggle to show */}
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
+                      {o.items.length > 0 && (
+                        <div className="space-y-2">
+                          {!expandedItems.includes(o.id) && (
+                            <button
+                              onClick={() => toggleExpanded(o.id)}
+                              className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 text-sm font-medium flex items-center gap-1"
+                            >
+                              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M9 5l7 7-7 7"/>
+                              </svg>
+                              Show Items ({o.items.length})
+                            </button>
+                          )}
+                          {expandedItems.includes(o.id) && (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Items Ordered</span>
+                                <button
+                                  onClick={() => toggleExpanded(o.id)}
+                                  className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 text-sm font-medium flex items-center gap-1"
+                                >
+                                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M19 9l-7 7-7-7"/>
+                                  </svg>
+                                  Hide
+                                </button>
+                              </div>
+                              <div className="space-y-1 max-h-32 overflow-y-auto">
+                                {o.items.map((li) => {
+                                  const itemRef = allItems.find(i => i.id === li.itemId);
+                                  const unit = itemRef?.unit || "PCS";
+                                  let qty = Number(li.qty);
+                                  if (unit === "KG") {
+                                    qty = Math.round(qty * 10) / 10; // 1 decimal place
+                                  } else {
+                                    qty = Math.floor(qty); // integer
+                                  }
+                                  return (
+                                    <div key={li.id} className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                                      {li.item.name}×{qty}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bottom row - pinned to bottom */}
+                  <div className="mt-auto pt-4 border-t border-gray-100 dark:border-gray-700">
+                    <div className="flex flex-col gap-3">
+                      {/* Status Actions - more prominent now */}
+                      <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                        {o.paymentStatus !== "paid" && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickStatusUpdate(o.id, "paid", o.deliveryStatus)}
+                            disabled={updatingStatus === o.id}
+                            className="px-4 py-2 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-lg text-sm font-medium hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {updatingStatus === o.id ? (
+                              <span className="flex items-center gap-2">
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Updating…
+                              </span>
+                            ) : (
+                              "Mark as Paid"
+                            )}
+                          </button>
+                        )}
+                        {o.deliveryStatus !== "delivered" && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickStatusUpdate(o.id, o.paymentStatus, "delivered")}
+                            disabled={updatingStatus === o.id}
+                            className="px-4 py-2 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {updatingStatus === o.id ? (
+                              <span className="flex items-center gap-2">
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Updating…
+                              </span>
+                            ) : (
+                              "Mark as Delivered"
+                            )}
+                          </button>
+                        )}
+                        {o.paymentStatus === "paid" && o.deliveryStatus === "delivered" && (
+                          <span className="px-4 py-2 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded-lg text-sm font-medium">
+                            Order Complete
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Price and Actions */}
+                      <div className="flex items-center justify-between">
+                        <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                          Rp {o.total.toLocaleString("id-ID")}
+                        </div>
+                        
+                        {/* Three-dot menu */}
+                        <DropdownMenu
+                          trigger={
+                            <MoreVerticalIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                          }
+                        >
+                          {o.customer?.whatsapp && (
+                            <DropdownMenuItem onClick={() => {}}>
+                              <a
+                                href={`https://wa.me/${o.customer.whatsapp}?text=${encodeURIComponent(buildWhatsAppMessage(o))}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 w-full"
+                              >
+                                <WhatsAppIcon className="w-4 h-4" />
+                                WhatsApp
+                              </a>
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem onClick={() => openEdit(o)}>
+                            <PencilIcon className="w-4 h-4" />
+                            Edit Order
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => onDelete(o.id)}
+                            danger
+                            disabled={deletingOrderId === o.id}
+                          >
+                            {deletingOrderId === o.id ? (
+                              <span className="flex items-center gap-2">
+                                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Deleting…
+                              </span>
+            ) : (
+              <>
+                <TrashIcon className="w-4 h-4" />
+                Delete Order
+              </>
+            )}
+                          </DropdownMenuItem>
+                        </DropdownMenu>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </li>
@@ -521,79 +884,128 @@ export default function OrdersPage() {
         </ul>
       ) : (
         /* =============== LIST/TABLE VIEW =============== */
-        <div className="rounded-2xl border overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50 text-gray-700">
-              <tr className="text-left">
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Customer</th>
-                <th className="px-3 py-2">Items</th>
-                <th className="px-3 py-2">Total</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((o) => {
-                const s = statusText(o);
-                const date = new Date(o.createdAt).toLocaleString("id-ID");
-                const itemCount = o.items.reduce((n, it) => n + it.qty, 0);
-                return (
-                  <tr key={o.id} className="border-t hover:bg-gray-50">
-                    <td className="px-3 py-2 whitespace-nowrap">{date}</td>
-                    <td className="px-3 py-2">
-                      <div className="truncate max-w-[260px]">
-                        <span className="font-medium">{o.customer?.name ?? "Walk-in"}</span>
-                        {o.customer?.whatsapp ? <span className="text-gray-500"> • +{o.customer.whatsapp}</span> : null}
-                      </div>
-                      {o.deliveryNote && (
-                        <div className="text-[11px] text-gray-500 truncate max-w-[260px]">Note: {o.deliveryNote}</div>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">{itemCount}</td>
-                    <td className="px-3 py-2 whitespace-nowrap font-semibold">
-                      Rp {o.total.toLocaleString("id-ID")}
-                    </td>
-                    <td className="px-3 py-2">
-                      <StatusBadge s={s} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2 justify-end">
-                        {o.customer?.whatsapp && (
-                          <a
-                            className={`${btnIcon} text-white bg-[#25D366] hover:bg-[#1ebe57] active:bg-[#17a652] focus:ring-[#25D366] border-transparent`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            href={`https://wa.me/${o.customer.whatsapp}?text=${encodeURIComponent(buildWhatsAppMessage(o))}`}
-                            title="WhatsApp"
-                            aria-label="WhatsApp"
+        <div className="card p-0 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead className="table-header">
+                <tr>
+                  <th className="table-cell">Date & Time</th>
+                  <th className="table-cell">Customer</th>
+                  <th className="table-cell">Items</th>
+                  <th className="table-cell">Total</th>
+                  <th className="table-cell">Status</th>
+                  <th className="table-cell text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filtered.map((o) => {
+                  const s = statusText(o);
+                  const formattedDateTime = formatDateWithTime(o.createdAt);
+                  const itemCountDisplay = o.items.reduce((sum, item) => {
+                    const itemRef = allItems.find(i => i.id === item.itemId);
+                    const unit = itemRef?.unit || "PCS";
+                    if (unit === "KG") {
+                      return sum + Number(item.qty);
+                    } else {
+                      return sum + Math.floor(Number(item.qty));
+                    }
+                  }, 0);
+                  return (
+                    <tr key={o.id} className="table-row">
+                      <td className="table-cell">
+                        <div className="text-sm">
+                          <div className="font-medium text-gray-900 dark:text-gray-100">{formattedDateTime}</div>
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        <div className="max-w-xs">
+                          <div className="font-medium text-gray-900 dark:text-gray-100">{o.customer?.name ?? "Walk-in"}</div>
+                          {o.customer?.address && (
+                            <div className="text-sm text-gray-600 dark:text-gray-400 truncate" title={o.customer.address}>
+                              📍 {o.customer.address}
+                            </div>
+                          )}
+                           {o.deliveryNote && (
+                             <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1" title={o.deliveryNote}>
+                               Note: {o.deliveryNote}
+                             </div>
+                           )}
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        <div className="text-gray-900 dark:text-gray-100">{itemCountDisplay}</div>
+                      </td>
+                      <td className="table-cell">
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">
+                          Rp {o.total.toLocaleString("id-ID")}
+                        </div>
+                      </td>
+                      <td className="table-cell">
+                        <StatusBadge s={s} />
+                      </td>
+                      <td className="table-cell">
+                        <div className="flex items-center gap-2 justify-end">
+                          {o.customer?.whatsapp && (
+                            <a
+                              className={`${btnIcon} text-white bg-green-600 hover:bg-green-700 focus:ring-green-500 border-transparent`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              href={`https://wa.me/${o.customer.whatsapp}?text=${encodeURIComponent(buildWhatsAppMessage(o))}`}
+                              title="WhatsApp"
+                              aria-label="WhatsApp"
+                            >
+                              <WhatsAppIcon className="w-4 h-4" />
+                            </a>
+                          )}
+                          <button
+                            className={`${btnIcon} text-primary-600 bg-white border-primary-200 hover:bg-primary-50 focus:ring-primary-500`}
+                            onClick={() => openEdit(o)}
+                            title="Edit"
+                            aria-label="Edit"
                           >
-                            <WhatsAppIcon className="w-5 h-5" />
-                          </a>
-                        )}
-                        <button
-                          className={`${btnIcon} text-[var(--color-primary-800)] bg-white border-gray-300 hover:bg-gray-50`}
-                          onClick={() => openEdit(o)}
-                          title="Edit"
-                          aria-label="Edit"
-                        >
-                          <PencilIcon className="w-5 h-5" />
-                        </button>
-                        <button
-                          className={`${btnIcon} text-red-600 border-red-300 hover:bg-red-50`}
-                          onClick={() => onDelete(o.id)}
-                          title="Delete order"
-                          aria-label="Delete"
-                        >
-                          <TrashIcon className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                            <PencilIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            className={`${btnIcon} text-red-600 border-red-200 hover:bg-red-50 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed`}
+                            onClick={() => onDelete(o.id)}
+                            disabled={deletingOrderId === o.id}
+                            title="Delete order"
+                            aria-label="Delete"
+                          >
+                            {deletingOrderId === o.id ? (
+                              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                            ) : (
+                              <TrashIcon className="w-4 h-4" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Pagination */}
+      {pagination.totalPages > 1 && (
+        <div className="flex justify-center">
+          <Pagination
+            currentPage={pagination.page}
+            totalPages={pagination.totalPages}
+            hasNext={pagination.hasNext}
+            hasPrev={pagination.hasPrev}
+            onPageChange={handlePageChange}
+            limit={pagination.limit}
+            onLimitChange={handleLimitChange}
+            total={pagination.total}
+          />
         </div>
       )}
 
