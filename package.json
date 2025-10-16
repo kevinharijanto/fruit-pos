@@ -24,7 +24,6 @@
     "bcryptjs": "^3.0.2",
     "clsx": "^2.1.1",
     "dayjs": "^1.11.18",
-    "lightningcss-win32-x64-msvc": "^1.30.2",
     "next": "15.5.5",
     "prisma": "^6.17.1",
     "qrcode": "^1.5.4",
