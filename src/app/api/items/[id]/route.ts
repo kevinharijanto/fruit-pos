@@ -59,6 +59,28 @@ export async function PATCH(req: Request, { params }: Params) {
 /** DELETE /api/items/:id */
 export async function DELETE(_req: Request, { params }: Params) {
   const { id } = await params;
+  
+  // Check if item is referenced in any orders
+  const orderItemsCount = await prisma.orderItem.count({
+    where: { itemId: id }
+  });
+  
+  const sellerOrderItemsCount = await prisma.sellerOrderItem.count({
+    where: { itemId: id }
+  });
+  
+  if (orderItemsCount > 0 || sellerOrderItemsCount > 0) {
+    return NextResponse.json(
+      {
+        error: "Cannot delete item that is referenced in orders. Please remove the item from all orders first.",
+        orderItemsCount,
+        sellerOrderItemsCount
+      },
+      { status: 400 }
+    );
+  }
+  
+  // Safe to delete the item
   await prisma.item.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

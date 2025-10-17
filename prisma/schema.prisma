@@ -1,16 +1,3 @@
-/* =========================
-datasource db {
-  provider = "postgresql"
-  url      = "file:./dev.db"
-}
-========================= */
-
-datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL") 
-}
-
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -19,43 +6,18 @@ generator ts {
   provider = "prisma-client-js"
 }
 
-/* =========================
-   Shared Enums
-========================= */
-
-enum Unit {
-  PCS
-  KG
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
-
-enum StockMode {
-  TRACK   // stock tracked (Have Stock)
-  RESELL  // no stock tracking (Resell)
-}
-
-enum PaymentStatus  { 
-  unpaid 
-  paid 
-  refunded 
-}
-
-enum DeliveryStatus { 
-  pending 
-  delivered 
-  failed 
-}
-
-/* =========================
-   Models
-========================= */
 
 model Customer {
   id        String   @id @default(cuid())
   name      String
   address   String?
   whatsapp  String?  @unique
-  orders    Order[]
   createdAt DateTime @default(now())
+  orders    Order[]
 
   @@index([name], map: "idx_customer_name")
   @@index([whatsapp], map: "idx_customer_whatsapp")
@@ -65,38 +27,22 @@ model Category {
   id        String   @id @default(cuid())
   name      String   @unique
   createdAt DateTime @default(now())
-
   items     Item[]
 }
 
 model Item {
-  id         String    @id @default(cuid())
-  name       String
-
-  // selling price per unit/kg (Rp)
-  price      Int
-
-  // modal / cost price per unit/kg (Rp)
-  costPrice  Int       @default(0)
-
-  // allow fractional stock for KG
-  stock      Decimal   @default(0)
-
-  // NEW: how the price is defined
-  unit       Unit      @default(PCS)
-
-  // NEW: whether stock is tracked (TRACK) or not (RESELL)
-  stockMode  StockMode @default(TRACK)
-
-  // NEW: optional category
-  categoryId String?
-  category   Category? @relation(fields: [categoryId], references: [id])
-
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-
-  // back relation to order lines
-  OrderItem  OrderItem[]
+  id              String            @id @default(cuid())
+  name            String
+  price           Int
+  costPrice       Int               @default(0)
+  stock           Decimal           @default(0)
+  unit            Unit              @default(PCS)
+  stockMode       StockMode         @default(TRACK)
+  categoryId      String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  category        Category?         @relation(fields: [categoryId], references: [id])
+  OrderItem       OrderItem[]
   SellerOrderItem SellerOrderItem[]
 
   @@index([categoryId], map: "idx_items_category_id")
@@ -105,28 +51,22 @@ model Item {
 }
 
 model Order {
-  id          String     @id @default(cuid())
-  customerId  String?
-  customer    Customer?  @relation(fields: [customerId], references: [id])
-
-  paymentStatus  PaymentStatus  @default(unpaid)
+  id             String         @id @default(cuid())
+  customerId     String?
+  paidAt         DateTime?
+  deliveredAt    DateTime?
+  paymentType    String?
+  qrisRef        String?
+  deliveryNote   String?
+  subtotal       Int
+  discount       Int            @default(0)
+  total          Int
+  createdAt      DateTime       @default(now())
   deliveryStatus DeliveryStatus @default(pending)
-
-  paidAt      DateTime?
-  deliveredAt DateTime?
-
-  paymentType String?
-  qrisRef     String?
-
-  deliveryNote String?
-
-  subtotal    Int
-  discount    Int        @default(0)
-  deliveryFee Int        @default(0)
-  total       Int
-
-  items       OrderItem[]
-  createdAt   DateTime   @default(now())
+  paymentStatus  PaymentStatus  @default(unpaid)
+  deliveryFee    Int            @default(0)
+  customer       Customer?      @relation(fields: [customerId], references: [id])
+  items          OrderItem[]
 
   @@index([createdAt(sort: Desc)], map: "idx_orders_created_at")
   @@index([paymentStatus], map: "idx_orders_payment_status")
@@ -137,38 +77,33 @@ model Order {
 }
 
 model Seller {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   name      String
   address   String?
-  whatsapp  String?  @unique
+  whatsapp  String?       @unique
+  createdAt DateTime      @default(now())
   orders    SellerOrder[]
-  createdAt DateTime @default(now())
 
   @@index([name], map: "idx_seller_name")
   @@index([whatsapp], map: "idx_seller_whatsapp")
 }
 
 model SellerOrder {
-  id          String     @id @default(cuid())
-  sellerId    String?
-  seller      Seller?    @relation(fields: [sellerId], references: [id])
-
-  paymentStatus  PaymentStatus  @default(unpaid)
-  deliveryStatus DeliveryStatus @default(pending)
-
-  paidAt      DateTime?
-  deliveredAt DateTime?
-
-  paymentType String?
-  deliveryNote String?
-
-  subtotal    Int
-  discount    Int        @default(0)
-  deliveryFee Int        @default(0)
-  total       Int
-
-  items       SellerOrderItem[]
-  createdAt   DateTime   @default(now())
+  id             String            @id @default(cuid())
+  sellerId       String?
+  paymentStatus  PaymentStatus     @default(unpaid)
+  deliveryStatus DeliveryStatus    @default(pending)
+  paidAt         DateTime?
+  deliveredAt    DateTime?
+  paymentType    String?
+  deliveryNote   String?
+  subtotal       Int
+  discount       Int               @default(0)
+  deliveryFee    Int               @default(0)
+  total          Int
+  createdAt      DateTime          @default(now())
+  seller         Seller?           @relation(fields: [sellerId], references: [id])
+  items          SellerOrderItem[]
 
   @@index([createdAt(sort: Desc)], map: "idx_seller_orders_created_at")
   @@index([paymentStatus], map: "idx_seller_orders_payment_status")
@@ -179,15 +114,13 @@ model SellerOrder {
 }
 
 model SellerOrderItem {
-  id      String @id @default(cuid())
+  id      String      @id @default(cuid())
   orderId String
   itemId  String
-
-  order SellerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  item  Item        @relation(fields: [itemId], references: [id])
-
-  qty   Decimal
-  price Int
+  qty     Decimal
+  price   Int
+  item    Item        @relation(fields: [itemId], references: [id])
+  order   SellerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId], map: "idx_seller_order_items_order_id")
   @@index([itemId], map: "idx_seller_order_items_item_id")
@@ -195,17 +128,37 @@ model SellerOrderItem {
 }
 
 model OrderItem {
-  id      String @id @default(cuid())
+  id      String  @id @default(cuid())
   orderId String
   itemId  String
-
-  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  item  Item  @relation(fields: [itemId], references: [id])
-
-  qty   Decimal
-  price Int
+  qty     Decimal
+  price   Int
+  item    Item    @relation(fields: [itemId], references: [id])
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId], map: "idx_order_items_order_id")
   @@index([itemId], map: "idx_order_items_item_id")
   @@index([orderId, itemId], map: "idx_order_items_composite")
+}
+
+enum Unit {
+  PCS
+  KG
+}
+
+enum StockMode {
+  TRACK
+  RESELL
+}
+
+enum PaymentStatus {
+  unpaid
+  paid
+  refunded
+}
+
+enum DeliveryStatus {
+  pending
+  delivered
+  failed
 }

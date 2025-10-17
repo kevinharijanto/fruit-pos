@@ -23,10 +23,10 @@ type Order = {
   deliveryNote?: string | null;
   paymentType?: "CASH" | "TRANSFER" | "QRIS" | null;
   customer?: { name?: string | null; whatsapp?: string | null; address?: string | null } | null;
-  items: { id: string; itemId: string; qty: number; price: number; item: { name: string } }[];
+  items: { id: string; itemId: string; qty: number; price: number; item: { name: string; unit: "PCS" | "KG" } }[];
 };
 
-type ItemRef = { id: string; name: string; price: number; stock: number; unit?: "PCS" | "KG" };
+type ItemRef = { id: string; name: string; price: number; stock?: number; unit?: "PCS" | "KG"; stockMode?: "TRACK" | "RESELL" };
 
 type StatusFilter = "All" | "Unfinished" | "Done";
 
@@ -81,7 +81,7 @@ function mdSafe(text: string) {
 
 export function buildWhatsAppMessage(o: {
   createdAt: string;
-  items: { qty: number; price: number; item: { name: string } }[];
+  items: { qty: number; price: number; item: { name: string; unit?: "PCS" | "KG" } }[];
   total: number;
   discount: number;
   deliveryFee: number;
@@ -94,8 +94,15 @@ export function buildWhatsAppMessage(o: {
   const rows: string[] = [];
   for (const li of o.items) {
     const name = li.item?.name ? li.item.name : "-";
+    const unit = li.item?.unit || "PCS";
+    let qty = Number(li.qty);
+    if (unit === "KG") {
+      qty = Math.round(qty * 10) / 10; // 1 decimal place
+    } else {
+      qty = Math.floor(qty); // integer
+    }
     rows.push(`*${mdSafe(name)}*`);
-    rows.push(`${li.qty}x   _${idr(li.price)}_`);
+    rows.push(`${qty}${unit.toLowerCase()}x   _${idr(li.price)}_`);
   }
 
   const parts: string[] = [
@@ -355,8 +362,9 @@ export default function OrdersPage() {
         id: i.id,
         name: i.name,
         price: asNumber(i.price),
-        stock: asNumber(i.stock),
+        stock: asNumber((i as any).stock),
         unit: i.unit,
+        stockMode: (i as any).stockMode as "TRACK" | "RESELL" | undefined,
       }));
       setAllItems(mapped);
     })();
@@ -430,7 +438,7 @@ export default function OrdersPage() {
         itemId: l.itemId,
         qty: l.qty,
         price: l.price,
-        item: { name: l.item.name },
+        item: { name: l.item.name, unit: l.item.unit },
       })),
     });
     setModalOpen(true);
@@ -660,8 +668,7 @@ export default function OrdersPage() {
             const itemCount = o.items.reduce((n, it) => n + it.qty, 0);
             // Fix decimal places - show integer for PCS, 1 decimal for KG
             const itemCountDisplay = o.items.reduce((sum, item) => {
-              const itemRef = allItems.find(i => i.id === item.itemId);
-              const unit = itemRef?.unit || "PCS";
+              const unit = item.item.unit || "PCS";
               if (unit === "KG") {
                 return sum + Number(item.qty);
               } else {
@@ -672,8 +679,7 @@ export default function OrdersPage() {
             const itemsPreview = o.items
               .slice(0, 3)
               .map((li) => {
-                const itemRef = allItems.find(i => i.id === li.itemId);
-                const unit = itemRef?.unit || "PCS";
+                const unit = li.item.unit || "PCS";
                 let qty = Number(li.qty);
                 if (unit === "KG") {
                   qty = Math.round(qty * 10) / 10; // 1 decimal place
@@ -750,8 +756,7 @@ export default function OrdersPage() {
                               </div>
                               <div className="space-y-1 max-h-32 overflow-y-auto">
                                 {o.items.map((li) => {
-                                  const itemRef = allItems.find(i => i.id === li.itemId);
-                                  const unit = itemRef?.unit || "PCS";
+                                  const unit = li.item.unit || "PCS";
                                   let qty = Number(li.qty);
                                   if (unit === "KG") {
                                     qty = Math.round(qty * 10) / 10; // 1 decimal place
@@ -902,8 +907,7 @@ export default function OrdersPage() {
                   const s = statusText(o);
                   const formattedDateTime = formatDateWithTime(o.createdAt);
                   const itemCountDisplay = o.items.reduce((sum, item) => {
-                    const itemRef = allItems.find(i => i.id === item.itemId);
-                    const unit = itemRef?.unit || "PCS";
+                    const unit = item.item.unit || "PCS";
                     if (unit === "KG") {
                       return sum + Number(item.qty);
                     } else {

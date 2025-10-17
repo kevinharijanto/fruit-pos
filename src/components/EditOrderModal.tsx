@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import Modal, { ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils";
 
@@ -18,14 +18,18 @@ export type OrderForEdit = {
   discount?: number;
   deliveryFee?: number;
   customer?: { name?: string | null; whatsapp?: string | null; address?: string | null } | null;
-  items: { itemId: string; qty: number; price: number; item: { name: string } }[];
+  items: { itemId: string; qty: number; price: number; item: { name: string; unit?: "PCS" | "KG" } }[];
 };
 
-export type ItemRef = { id: string; name: string; price: number; stock: number; unit?: "PCS" | "KG" };
+export type ItemRef = { id: string; name: string; price: number; stock?: number; unit?: "PCS" | "KG"; stockMode?: "TRACK" | "RESELL" };
 type CustPick = { id: string; name?: string | null; whatsapp?: string | null; address?: string | null };
 
 export default function EditOrderModal({
-  mode, order, allItems, onClose, onSaved,
+  mode,
+  order,
+  allItems,
+  onClose,
+  onSaved,
 }: {
   mode: "create" | "edit";
   order: OrderForEdit;
@@ -33,10 +37,9 @@ export default function EditOrderModal({
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
-  // State for items search with pagination
-  const [searchResults, setSearchResults] = useState<ItemRef[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  // Customer
+  /* =========================
+     Customer state
+  ========================= */
   const [name, setName] = useState(order.customer?.name ?? "");
   const [address, setAddress] = useState(order.customer?.address ?? "");
   const initialDigits = (order.customer?.whatsapp ?? "").replace(/^\+?62/, "").replace(/\D/g, "");
@@ -56,36 +59,42 @@ export default function EditOrderModal({
         }
       }
     })();
-    return () => { ignore = true; };
+    return () => {
+      ignore = true;
+    };
   }, [fullWA]);
 
-  const phoneDisplay = useMemo(
-    () => phoneDigits.replace(/\D/g, "").replace(/(.{4})/g, "$1 ").trim(),
-    [phoneDigits]
-  );
-  function onPhoneInput(v: string) { setPhoneDigits(v.replace(/\D/g, "")); }
+  const phoneDisplay = useMemo(() => phoneDigits.replace(/\D/g, "").replace(/(.{4})/g, "$1 ").trim(), [phoneDigits]);
+  function onPhoneInput(v: string) {
+    setPhoneDigits(v.replace(/\D/g, ""));
+  }
 
-  // Items
+  /* =========================
+     Items & search
+  ========================= */
   const [lines, setLines] = useState(
     (order.items || []).map((l) => ({ itemId: l.itemId, name: l.item.name, qty: l.qty, price: l.price }))
   );
+
   const itemsById = useMemo(() => Object.fromEntries(allItems.map((i) => [i.id, i])), [allItems]);
 
+  // Remember original quantities (so PCS stock checks allow keeping previous qty)
   const origQty = useMemo(() => {
     const m = new Map<string, number>();
     (order.items || []).forEach((l) => m.set(l.itemId, l.qty));
     return m;
   }, [order.items]);
 
+  // Search
   const [query, setQuery] = useState("");
-  
-  // Update search results when query changes
+  const [searchResults, setSearchResults] = useState<ItemRef[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
   useEffect(() => {
     if (!query.trim()) {
       setSearchResults([]);
       return;
     }
-    
     let ignore = false;
     const controller = new AbortController();
     const timeoutId = setTimeout(async () => {
@@ -96,22 +105,14 @@ export default function EditOrderModal({
           signal: controller.signal,
         });
         const data = await res.json();
-        // Handle paginated response
         const items = data.data || (Array.isArray(data) ? data : []);
-        if (!ignore) {
-          setSearchResults(items);
-        }
-      } catch (error) {
-        if (!ignore && error instanceof Error && error.name !== 'AbortError') {
-          console.error('Failed to search items:', error);
-        }
+        if (!ignore) setSearchResults(items);
+      } catch (e: any) {
+        if (!ignore && e?.name !== "AbortError") console.error("Failed to search items:", e);
       } finally {
-        if (!ignore) {
-          setSearchLoading(false);
-        }
+        if (!ignore) setSearchLoading(false);
       }
     }, 300);
-
     return () => {
       ignore = true;
       controller.abort();
@@ -125,97 +126,165 @@ export default function EditOrderModal({
     return searchResults;
   }, [allItems, query, searchResults]);
 
-  // Helpers for unit-aware qty edits
+  /* =========================
+     Item resolvers (source of truth)
+  ========================= */
+  const resolveItem = useCallback(
+    (id: string) => itemsById[id] ?? searchResults.find((x) => x.id === id),
+    [itemsById, searchResults]
+  );
+
+  const resolveUnit = useCallback(
+    (id: string) => {
+      // Prefer live item refs (search or allItems)
+      const liveUnit = resolveItem(id)?.unit as "PCS" | "KG" | undefined;
+      if (liveUnit) return liveUnit;
+      // Fallback to the unit provided by the incoming order payload (if any)
+      const fromOrder = order.items?.find((l) => l.itemId === id)?.item?.unit as "PCS" | "KG" | undefined;
+      return fromOrder ?? "PCS";
+    },
+    [resolveItem, order.items]
+  );
+
+  /* =========================
+     Qty helpers (unit-aware)
+  ========================= */
   function roundByUnit(itemId: string, q: number) {
-    const u = itemsById[itemId]?.unit || "PCS";
+    if (!Number.isFinite(q) || q < 0) q = 0;
+    const u = resolveUnit(itemId);
     if (u === "KG") {
-      // one decimal place, e.g. 0.1 kg steps
-      return Math.max(0, Math.round(q * 1000) / 1000);
+      return Math.round(q * 1000) / 1000;
     }
-    // PCS → integers
-    return Math.max(0, Math.floor(q));
+    return Math.floor(q);
   }
 
-  function setQty(itemId: string, q: number) {
-    setLines((prev) => prev.map((l) => (l.itemId === itemId ? { ...l, qty: roundByUnit(itemId, q || 0) } : l)));
-  }
+function setQty(itemId: string, q: number) {
+  setLines((prev) =>
+    prev.map((l) => {
+      if (l.itemId !== itemId) return l;
 
-  function inc(itemId: string) {
-    setLines((prev) =>
-      prev.map((l) => {
-        if (l.itemId !== itemId) return l;
-        const base = itemsById[itemId];
-        const step = (base?.unit === "KG") ? 0.001 : 1;
-        const reserved = origQty.get(itemId) || 0;
-        const available = (base?.stock ?? 0) + reserved - l.qty;
-        if (base?.unit !== "KG" && available <= 0) return l; // only guard stock for tracked PCS; KG items are RESELL anyway
-        const next = roundByUnit(itemId, l.qty + step);
-        if (base?.unit !== "KG" && next > l.qty + available) return l;
-        return { ...l, qty: next };
-      })
-    );
-  }
+      const base = resolveItem(itemId);
+      const u = resolveUnit(itemId);
 
-  function dec(itemId: string) {
-    setLines((prev) =>
-      prev.map((l) => {
-        if (l.itemId !== itemId) return l;
-        const base = itemsById[itemId];
-        const step = (base?.unit === "KG") ? 0.001 : 1;
-        const next = roundByUnit(itemId, l.qty - step);
-        return { ...l, qty: next };
-      })
-    );
-  }
+      const parsed = Number.isFinite(q) ? q : l.qty;   // don't jump to 0 on transient input
+      const roundedQty = roundByUnit(itemId, parsed);
+
+      const reserved = origQty.get(itemId) || 0;
+      const stock = typeof base?.stock === "number" ? base!.stock : undefined;
+      const tracked = (base?.stockMode === "TRACK") || (base?.stockMode == null && typeof stock === "number");
+
+      // PCS: for tracked items, block only if remaining after change would be negative
+      if (u !== "KG" && tracked && typeof stock === "number" && (stock + reserved - roundedQty) < 0) {
+        return l;
+      }
+      return { ...l, qty: roundedQty };
+    })
+  );
+}
+
+function inc(itemId: string) {
+  setLines((prev) =>
+    prev.map((l) => {
+      if (l.itemId !== itemId) return l;
+      const base = resolveItem(itemId);
+      const u = resolveUnit(itemId);
+      const step = u === "KG" ? 0.001 : 1;
+
+      const reserved = origQty.get(itemId) || 0;
+      const stock = typeof base?.stock === "number" ? base!.stock : undefined;
+      const tracked = (base?.stockMode === "TRACK") || (base?.stockMode == null && typeof stock === "number");
+
+      const next = roundByUnit(itemId, l.qty + step);
+
+      // PCS: only block for tracked items if stock would go negative AFTER the change
+      if (u !== "KG" && tracked && typeof stock === "number" && (stock + reserved - next) < 0) {
+        return l;
+      }
+      return { ...l, qty: next };
+    })
+  );
+}
+
+
+function dec(itemId: string) {
+  setLines((prev) =>
+    prev.map((l) => {
+      if (l.itemId !== itemId) return l;
+      const u = resolveUnit(itemId);
+      const step = u === "KG" ? 0.001 : 1;
+      const next = roundByUnit(itemId, l.qty - step);
+      return { ...l, qty: next };
+    })
+  );
+}
+
 
   function remove(itemId: string) {
     setLines((prev) => prev.filter((l) => l.itemId !== itemId));
   }
 
-  function addItem(itemId: string) {
-    const exists = lines.find((l) => l.itemId === itemId);
-    let it = itemsById[itemId];
-    
-    // If not found in itemsById, check search results
-    if (!it) {
-      const searchItem = searchResults.find(item => item.id === itemId);
-      if (searchItem) {
-        it = searchItem;
-      }
-    }
-    
-    if (!it) return;
-    if (exists) inc(itemId);
-    else setLines((prev) => [...prev, {
-      itemId,
-      name: it.name,
-      qty: it.unit === "KG" ? 0.01 : 1,
-      price: it.price
-    }]);
+ function addItem(itemId: string) {
+  const exists = lines.find((l) => l.itemId === itemId);
+  const it = resolveItem(itemId);
+  if (!it) return;
+
+  if (exists) {
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.itemId !== itemId) return l;
+        const u = resolveUnit(itemId);
+        const step = u === "KG" ? 0.001 : 1;
+
+        const base = resolveItem(itemId);
+        const reserved = origQty.get(itemId) || 0;
+        const stock = typeof base?.stock === "number" ? base!.stock : undefined;
+        const tracked = (base?.stockMode === "TRACK") || (base?.stockMode == null && typeof stock === "number");
+
+        const next = roundByUnit(itemId, l.qty + step);
+
+        if (u !== "KG" && tracked && typeof stock === "number" && (stock + reserved - next) < 0) {
+          return l;
+        }
+        return { ...l, qty: next };
+      })
+    );
+  } else {
+    const u = it.unit ?? "PCS";
+    setLines((prev) => [
+      ...prev,
+      {
+        itemId,
+        name: it.name,
+        qty: u === "KG" ? 0.001 : 1,
+        price: it.price,
+      },
+    ]);
   }
+}
+
 
   const subtotal = useMemo(() => lines.reduce((s, l) => s + l.qty * l.price, 0), [lines]);
 
-  // Meta
+  /* =========================
+     Meta / statuses
+  ========================= */
   const [paymentType, setPaymentType] = useState<OrderForEdit["paymentType"]>(order.paymentType ?? null);
   const [deliveryNote, setDeliveryNote] = useState(order.deliveryNote ?? "");
   const [discount, setDiscount] = useState<number>(order.discount ?? 0);
   const [deliveryFee, setDeliveryFee] = useState<number>(order.deliveryFee ?? 0);
-  // NEW: local dual-tag state (infer from provided fields or legacy timestamps)
-  const [paymentStatus, setPaymentStatus] = useState<"unpaid"|"paid"|"refunded">(
+
+  const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "paid" | "refunded">(
     order.paymentStatus ?? (order.paidAt ? "paid" : "unpaid")
   );
-  const [deliveryStatus, setDeliveryStatus] = useState<"pending"|"delivered"|"failed">(
+  const [deliveryStatus, setDeliveryStatus] = useState<"pending" | "delivered" | "failed">(
     order.deliveryStatus ?? (order.deliveredAt ? "delivered" : "pending")
   );
 
   const total = Math.max(subtotal - (discount || 0) + (deliveryFee || 0), 0);
-
   const [saving, setSaving] = useState(false);
 
   async function save() {
-    if (saving) return; // Prevent multiple calls
-    
+    if (saving) return;
     const payload = {
       customer: fullWA || name || address ? { name, address, whatsapp: fullWA } : undefined,
       items: lines.filter((l) => l.qty > 0).map((l) => ({ itemId: l.itemId, qty: l.qty })),
@@ -231,9 +300,17 @@ export default function EditOrderModal({
       setSaving(true);
       let res: Response;
       if (mode === "create") {
-        res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        res = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
       } else {
-        res = await fetch(`/api/orders/${order.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+        res = await fetch(`/api/orders/${order.id}` , {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
       }
 
       if (!res.ok) {
@@ -247,14 +324,16 @@ export default function EditOrderModal({
         return;
       }
       await onSaved();
-    } catch (error) {
-      alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } catch (error: any) {
+      alert(`Failed to save: ${error?.message ?? "Unknown error"}`);
     } finally {
       setSaving(false);
     }
   }
 
-  // Customer picker (unchanged visual)
+  /* =========================
+     Customer picker (unchanged UI)
+  ========================= */
   const [pickerOpen, setPickerOpen] = useState(false);
   const [custQ, setCustQ] = useState("");
   const [custResults, setCustResults] = useState<CustPick[]>([]);
@@ -269,7 +348,6 @@ export default function EditOrderModal({
         const url = "/api/customers" + (custQ.trim() ? `?q=${encodeURIComponent(custQ.trim())}` : "");
         const res = await fetch(url, { cache: "no-store", signal: ctrl.signal });
         const data = await res.json();
-        // Handle paginated response
         const arr = data.data || (Array.isArray(data) ? data : []);
         if (!ignore) setCustResults(arr);
       } finally {
@@ -277,26 +355,27 @@ export default function EditOrderModal({
       }
     }, 200);
     setCustLoading(true);
-    return () => { ignore = true; ctrl.abort(); clearTimeout(id); };
+    return () => {
+      ignore = true;
+      ctrl.abort();
+      clearTimeout(id);
+    };
   }, [pickerOpen, custQ]);
 
   function chooseCustomer(c: CustPick) {
     setName(c.name || "");
     setAddress(c.address || "");
-    // normalize to local digits
     const d = String(c.whatsapp || "").replace(/\D/g, "");
     setPhoneDigits(d.startsWith("62") ? d.slice(2) : d.startsWith("0") ? d.slice(1) : d);
     setPickerOpen(false);
   }
 
+  /* =========================
+     Render
+  ========================= */
   return (
     <>
-      <Modal
-        isOpen={true}
-        onClose={onClose}
-        size="responsive"
-        className="overflow-hidden"
-      >
+      <Modal isOpen={true} onClose={onClose} size="responsive" className="overflow-hidden">
         <ModalHeader>
           <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {mode === "create" ? "New Order" : "Edit Order"}
@@ -323,7 +402,10 @@ export default function EditOrderModal({
                   "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700",
                   "disabled:opacity-50 disabled:cursor-not-allowed"
                 )}
-                onClick={() => { setPickerOpen(true); setCustQ(""); }}
+                onClick={() => {
+                  setPickerOpen(true);
+                  setCustQ("");
+                }}
                 disabled={saving}
               >
                 Choose existing
@@ -333,38 +415,40 @@ export default function EditOrderModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
-                <input 
+                <input
                   className={cn(
                     "input text-base",
                     "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
                     "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
-                  )} 
-                  placeholder="Customer name" 
-                  value={name} 
-                  onChange={(e) => setName(e.target.value)} 
+                  )}
+                  placeholder="Customer name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                 />
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Phone number</label>
                 <div className="flex">
-                  <div className={cn(
-                    "px-4 py-3 border rounded-l-lg bg-gray-50 select-none text-sm font-medium",
-                    "bg-gray-100 border-gray-300 text-gray-700",
-                    "dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
-                  )}>
+                  <div
+                    className={cn(
+                      "px-4 py-3 border rounded-l-lg bg-gray-50 select-none text-sm font-medium",
+                      "bg-gray-100 border-gray-300 text-gray-700",
+                      "dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+                    )}
+                  >
                     +62
                   </div>
-                  <input 
-                    inputMode="numeric" 
+                  <input
+                    inputMode="numeric"
                     className={cn(
                       "input border-l-0 rounded-r-lg text-base",
                       "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
                       "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
-                    )} 
-                    placeholder="8123 456 789" 
-                    value={phoneDisplay} 
-                    onChange={(e) => onPhoneInput(e.target.value)} 
+                    )}
+                    placeholder="8123 456 789"
+                    value={phoneDisplay}
+                    onChange={(e) => onPhoneInput(e.target.value)}
                   />
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">Stored as {fullWA || "—"}</div>
@@ -373,15 +457,15 @@ export default function EditOrderModal({
 
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
-              <input 
+              <input
                 className={cn(
                   "input text-base",
                   "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
                   "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
-                )} 
-                placeholder="Street, house no., etc." 
-                value={address} 
-                onChange={(e) => setAddress(e.target.value)} 
+                )}
+                placeholder="Street, house no., etc."
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
               />
             </div>
           </section>
@@ -398,7 +482,9 @@ export default function EditOrderModal({
                 <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">Items</div>
               </div>
               <div className="text-right text-sm text-gray-700 dark:text-gray-300 leading-5">
-                <div>Subtotal: <span className="font-semibold">Rp {subtotal.toLocaleString("id-ID")}</span></div>
+                <div>
+                  Subtotal: <span className="font-semibold">Rp {subtotal.toLocaleString("id-ID")}</span>
+                </div>
                 {discount ? <div>Discount: −Rp {discount.toLocaleString("id-ID")}</div> : null}
                 {deliveryFee ? <div>Ongkir: +Rp {deliveryFee.toLocaleString("id-ID")}</div> : null}
               </div>
@@ -407,36 +493,41 @@ export default function EditOrderModal({
             {/* Search to add */}
             <div className="rounded-lg border overflow-hidden bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600">
               <div className="p-2 sm:p-3 border-b border-gray-200 dark:border-gray-600">
-                <input 
+                <input
                   className={cn(
                     "input text-base",
                     "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
                     "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
-                  )} 
-                  placeholder="Search items to add…" 
-                  value={query} 
-                  onChange={(e) => setQuery(e.target.value)} 
+                  )}
+                  placeholder="Search items to add…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
                 />
               </div>
               <div className="max-h-40 sm:max-h-48 min-h-0 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-600">
                 {filtered.map((it) => (
-                  <button 
-                    key={it.id} 
-                    type="button" 
-                    onClick={() => addItem(it.id)} 
+                  <button
+                    key={it.id}
+                    type="button"
+                    onClick={() => addItem(it.id)}
                     className={cn(
-                      "w-full text-left p-3 hover:bg-gray-50 flex items-center justify-between text-base transition-colors",
+                      "w-full text-left p-3 flex items-center justify-between text-base transition-colors",
                       "hover:bg-gray-50",
                       "dark:hover:bg-gray-700"
                     )}
                   >
                     <span className="truncate font-medium text-gray-900 dark:text-gray-100">{it.name}</span>
                     <span className="text-xs text-gray-600 dark:text-gray-400">
-                      Rp {it.price.toLocaleString("id-ID")} • stock {it.stock}{it.unit ? ` • ${it.unit.toLowerCase()}` : ""}
+                      Rp {it.price.toLocaleString("id-ID")} • stock {it.stock}
+                      {it.unit ? ` • ${it.unit}` : ""}
                     </span>
                   </button>
                 ))}
-                {filtered.length === 0 && <div className="p-3 text-sm text-gray-500 dark:text-gray-400">No items.</div>}
+                {filtered.length === 0 && (
+                  <div className="p-3 text-sm text-gray-500 dark:text-gray-400">
+                    {searchLoading ? "Searching…" : "No items."}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -444,24 +535,28 @@ export default function EditOrderModal({
             <ul className="divide-y divide-gray-200 dark:divide-gray-600 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800">
               {lines.length === 0 && <li className="p-4 text-base text-gray-500 dark:text-gray-400">No items.</li>}
               {lines.map((l) => {
-                const u = itemsById[l.itemId]?.unit || "PCS";
+                const u = resolveUnit(l.itemId);
                 const step = u === "KG" ? 0.001 : 1;
+                const displayValue = u === "KG" ? Number(Number.isFinite(l.qty) ? Number(l.qty.toFixed(3)) : 0) : l.qty;
                 return (
-                  <li key={l.itemId} className="p-3 sm:p-4 grid grid-cols-1 gap-2 sm:gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+                  <li
+                    key={l.itemId}
+                    className="p-3 sm:p-4 grid grid-cols-1 gap-2 sm:gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"
+                  >
                     <div className="min-w-0">
                       <div className="truncate text-base font-medium text-gray-900 dark:text-gray-100">{l.name}</div>
                       <div className="text-xs text-gray-600 dark:text-gray-400">
-                        Rp {l.price.toLocaleString("id-ID")} / {u === "KG" ? "kg" : "pcs"}
+                        Rp {l.price.toLocaleString("id-ID")} / {u}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button 
+                      <button
                         className={cn(
                           "px-3 py-2 border rounded-lg text-base font-medium transition-colors",
                           "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
                           "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                        )} 
+                        )}
                         onClick={() => dec(l.itemId)}
                       >
                         −
@@ -469,21 +564,35 @@ export default function EditOrderModal({
                       <input
                         type="number"
                         step={step}
-                        className={cn(
-                          "w-20 border rounded-lg p-2 text-center text-base font-medium",
-                          "bg-white border-gray-300 text-gray-900",
-                          "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
-                        )}
-                        value={l.qty}
+                        className={cn("w-24 border rounded-lg p-2 text-center text-base font-medium",
+                                      "bg-white border-gray-300 text-gray-900",
+                                      "dark:bg-gray-8 00 dark:border-gray-600 dark:text-gray-300")}
+                        value={displayValue}
                         min={0}
-                        onChange={(e) => setQty(l.itemId, Number(e.target.value))}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(",", ".");
+                          if (raw === "") {
+                            // allow clearing to 0 while typing
+                            setQty(l.itemId, 0);
+                            return;
+                          }
+                          const n = Number(raw);
+                          if (Number.isNaN(n)) return;       // ignore bad keystrokes
+                          setQty(l.itemId, n);
+                        }}
+                        onBlur={(e) => {
+                          // snap to precision on blur
+                          const raw = e.target.value.replace(",", ".");
+                          const n = Number(raw);
+                          if (!Number.isNaN(n)) setQty(l.itemId, n);
+                        }}
                       />
-                      <button 
+                      <button
                         className={cn(
                           "px-3 py-2 border rounded-lg text-base font-medium transition-colors",
                           "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
                           "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                        )} 
+                        )}
                         onClick={() => inc(l.itemId)}
                       >
                         ＋
@@ -495,12 +604,12 @@ export default function EditOrderModal({
                     </div>
 
                     <div className="text-right">
-                      <button 
+                      <button
                         className={cn(
                           "px-3 py-2 border rounded-lg text-sm font-medium transition-colors",
                           "border-red-300 bg-white hover:bg-red-50 text-red-700",
                           "dark:border-red-600 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                        )} 
+                        )}
                         onClick={() => remove(l.itemId)}
                       >
                         Remove
@@ -526,13 +635,13 @@ export default function EditOrderModal({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment method</label>
-                <select 
+                <select
                   className={cn(
                     "input text-base",
                     "bg-white border-gray-300 text-gray-900",
                     "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300"
-                  )} 
-                  value={paymentType ?? ""} 
+                  )}
+                  value={paymentType ?? ""}
                   onChange={(e) => setPaymentType((e.target.value || null) as any)}
                 >
                   <option value="">Select…</option>
@@ -544,20 +653,20 @@ export default function EditOrderModal({
 
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
-                <input 
+                <input
                   className={cn(
                     "input text-base",
                     "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
                     "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
-                  )} 
-                  placeholder="Delivery notes (optional)" 
-                  value={deliveryNote} 
-                  onChange={(e) => setDeliveryNote(e.target.value)} 
+                  )}
+                  placeholder="Delivery notes (optional)"
+                  value={deliveryNote}
+                  onChange={(e) => setDeliveryNote(e.target.value)}
                 />
               </div>
             </div>
 
-            {/* NEW: Dual-tag status controls */}
+            {/* Dual-tag status controls */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment status</label>
@@ -647,10 +756,7 @@ export default function EditOrderModal({
               </button>
               <button
                 type="button"
-                className={cn(
-                  "btn btn-primary btn-md flex-1 sm:flex-none",
-                  "disabled:opacity-50 disabled:cursor-not-allowed"
-                )}
+                className={cn("btn btn-primary btn-md flex-1 sm:flex-none", "disabled:opacity-50 disabled:cursor-not-allowed")}
                 onClick={save}
                 disabled={saving}
               >
@@ -687,16 +793,16 @@ export default function EditOrderModal({
               </button>
             </div>
             <div className="px-5 py-3 border-b dark:border-gray-700">
-              <input 
+              <input
                 className={cn(
                   "input text-base",
                   "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
                   "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-500"
-                )} 
-                placeholder="Search name, address, or phone…" 
-                value={custQ} 
-                onChange={(e) => setCustQ(e.target.value)} 
-                autoFocus 
+                )}
+                placeholder="Search name, address, or phone…"
+                value={custQ}
+                onChange={(e) => setCustQ(e.target.value)}
+                autoFocus
               />
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-1">
@@ -708,14 +814,10 @@ export default function EditOrderModal({
                 <ul className="divide-y dark:divide-gray-700">
                   {custResults.map((c) => (
                     <li key={c.id}>
-                      <button 
-                        type="button" 
-                        onClick={() => chooseCustomer(c)} 
-                        className={cn(
-                          "w-full text-left p-4 hover:bg-gray-50",
-                          "hover:bg-gray-50",
-                          "dark:hover:bg-gray-700"
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => chooseCustomer(c)}
+                        className={cn("w-full text-left p-4 hover:bg-gray-50", "dark:hover:bg-gray-700")}
                       >
                         <div className="text-base font-medium truncate text-gray-900 dark:text-gray-100">{c.name || "—"}</div>
                         <div className="mt-1 text-sm text-gray-700 break-words dark:text-gray-300">{c.address || "No address"}</div>

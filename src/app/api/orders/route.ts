@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
               itemId: true,
               qty: true,
               price: true,
-              item: { select: { name: true } },
+              item: { select: { name: true, unit: true } },
             },
           },
         },
@@ -118,7 +118,10 @@ export async function GET(req: NextRequest) {
         // qty is Decimal in DB -> convert for client
         qty: Number(li.qty),
         price: li.price,
-        item: { name: li.item?.name ?? "" },
+        item: { 
+          name: li.item?.name ?? "",
+          unit: li.item?.unit ?? "PCS"
+        },
       })),
     }));
 
@@ -196,6 +199,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 3) Totals (money stays integer)
+    // Fix: Don't round the quantity for KG items, only round the final result
     const subtotal = lines.reduce((s, l) => s + Math.round(Number(l.qty) * l.price), 0);
     const discount = Math.max(0, Math.floor(toNumber(discIn, 0)));
     const deliveryFee = Math.max(0, Math.floor(toNumber(feeIn, 0)));
