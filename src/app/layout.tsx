@@ -7,8 +7,7 @@ import { DarkModeProvider } from "@/contexts/DarkModeContext";
 // src/app/layout.tsx
 export const metadata = {
   title: 'Fruit POS',
-  themeColor: '#16a34a',
-  manifest: '/manifest.webmanifest',          // ✅ add this line
+  manifest: '/manifest.webmanifest',      
   appleWebApp: {
     capable: true,
     title: 'Fruit POS',
@@ -21,6 +20,7 @@ export const metadata = {
 };
 // app/layout.tsx (if you manage viewport manually)
 export const viewport = {
+  themeColor: '#16a34a',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
