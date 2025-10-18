@@ -247,7 +247,7 @@ export default function CustomerModal({
               <div className="p-4 border-t border-gray-200 dark:border-gray-700">
                 <button
                   type="button"
-                  className="btn btn-secondary btn-sm w-full dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  className="btn btn-secondary btn-sm w-full dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                   onClick={() => setShowContactsList(false)}
                 >
                   Cancel
@@ -320,7 +320,7 @@ export default function CustomerModal({
           <div className="flex gap-3">
             <button
               type="button"
-              className="btn btn-secondary btn-md dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="btn btn-secondary btn-md dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
               onClick={onClose}
               disabled={saving}
             >

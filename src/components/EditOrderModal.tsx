@@ -375,7 +375,16 @@ function dec(itemId: string) {
   ========================= */
   return (
     <>
-      <Modal isOpen={true} onClose={onClose} size="responsive" className="overflow-hidden">
+      <Modal
+        isOpen={true}
+        onClose={onClose}
+        size="responsive"
+        className={cn(
+          "overflow-hidden",
+          // widen on sm+ so 4 cols fit comfortably
+          "sm:max-w-[900px] md:max-w-[980px] lg:max-w-[1040px] w-[min(96vw,1040px)]"
+        )}
+      >
         <ModalHeader>
           <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {mode === "create" ? "New Order" : "Edit Order"}
@@ -531,94 +540,116 @@ function dec(itemId: string) {
               </div>
             </div>
 
-            {/* Current items */}
-            <ul className="divide-y divide-gray-200 dark:divide-gray-600 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800">
-              {lines.length === 0 && <li className="p-4 text-base text-gray-500 dark:text-gray-400">No items.</li>}
-              {lines.map((l) => {
-                const u = resolveUnit(l.itemId);
-                const step = u === "KG" ? 0.001 : 1;
-                const displayValue = u === "KG" ? Number(Number.isFinite(l.qty) ? Number(l.qty.toFixed(3)) : 0) : l.qty;
-                return (
-                  <li
-                    key={l.itemId}
-                    className="p-3 sm:p-4 grid grid-cols-1 gap-2 sm:gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate text-base font-medium text-gray-900 dark:text-gray-100">{l.name}</div>
-                      <div className="text-xs text-gray-600 dark:text-gray-400">
-                        Rp {l.price.toLocaleString("id-ID")} / {u}
-                      </div>
-                    </div>
+            {/* Current items — mobile stacks; desktop = 4 fixed columns */}
+{/* Current items — mobile stacks; desktop = hard table grid */}
+<ul className="divide-y divide-gray-200 dark:divide-gray-600 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800">
+  {lines.length === 0 && (
+    <li className="p-4 text-base text-gray-500 dark:text-gray-400">No items.</li>
+  )}
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        className={cn(
-                          "px-3 py-2 border rounded-lg text-base font-medium transition-colors",
-                          "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
-                          "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                        )}
-                        onClick={() => dec(l.itemId)}
-                      >
-                        −
-                      </button>
-                      <input
-                        type="number"
-                        step={step}
-                        className={cn("w-24 border rounded-lg p-2 text-center text-base font-medium",
-                                      "bg-white border-gray-300 text-gray-900",
-                                      "dark:bg-gray-8 00 dark:border-gray-600 dark:text-gray-300")}
-                        value={displayValue}
-                        min={0}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(",", ".");
-                          if (raw === "") {
-                            // allow clearing to 0 while typing
-                            setQty(l.itemId, 0);
-                            return;
-                          }
-                          const n = Number(raw);
-                          if (Number.isNaN(n)) return;       // ignore bad keystrokes
-                          setQty(l.itemId, n);
-                        }}
-                        onBlur={(e) => {
-                          // snap to precision on blur
-                          const raw = e.target.value.replace(",", ".");
-                          const n = Number(raw);
-                          if (!Number.isNaN(n)) setQty(l.itemId, n);
-                        }}
-                      />
-                      <button
-                        className={cn(
-                          "px-3 py-2 border rounded-lg text-base font-medium transition-colors",
-                          "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
-                          "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                        )}
-                        onClick={() => inc(l.itemId)}
-                      >
-                        ＋
-                      </button>
-                    </div>
+  {lines.map((l) => {
+    const u = resolveUnit(l.itemId);
+    const step = u === "KG" ? 0.001 : 1;
+    const displayValue =
+      u === "KG" ? Number(Number.isFinite(l.qty) ? Number(l.qty.toFixed(3)) : 0) : l.qty;
 
-                    <div className="text-right sm:w-32 text-base font-semibold text-gray-900 dark:text-gray-100">
-                      Rp {(l.qty * l.price).toLocaleString("id-ID")}
-                    </div>
+    return (
+      <li
+        key={l.itemId}
+        className={cn(
+  "p-3 sm:p-5 grid grid-cols-1 gap-3",
+  // name flexes, qty cluster has a sane min/max, totals & actions are fixed-ish
+  "sm:[grid-template-columns:minmax(0,1.8fr)_minmax(240px,320px)_minmax(110px,140px)_minmax(96px,120px)]",
+  "sm:items-center sm:gap-x-5"
+)}
+      >
+        {/* 1) Name & unit/price — flexible column */}
+        <div className="min-w-0">
+          <div className="text-base font-medium text-gray-900 dark:text-gray-100 overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+            {l.name}
+          </div>
+          <div className="text-xs text-gray-600 dark:text-gray-400">
+            Rp {l.price.toLocaleString("id-ID")} / {u}
+          </div>
+        </div>
 
-                    <div className="text-right">
-                      <button
-                        className={cn(
-                          "px-3 py-2 border rounded-lg text-sm font-medium transition-colors",
-                          "border-red-300 bg-white hover:bg-red-50 text-red-700",
-                          "dark:border-red-600 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                        )}
-                        onClick={() => remove(l.itemId)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+        {/* 2) Qty cluster — fixed width, cannot shrink */}
+        <div className="flex items-center justify-start sm:justify-center gap-2 sm:gap-3 md:gap-4 sm:min-w-[240px] sm:max-w-[320px]">
+          <button
+            type="button"
+            className={cn(
+              "h-10 w-10 flex items-center justify-center border rounded-lg text-base font-medium transition-colors",
+              "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
+              "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            )}
+            onClick={() => dec(l.itemId)}
+            aria-label="Decrease"
+          >
+            −
+          </button>
+
+          <input
+            type="number"
+            step={step}
+            min={0}
+            value={displayValue}
+            onChange={(e) => {
+              const raw = e.target.value.replace(",", ".");
+              if (raw === "") { setQty(l.itemId, 0); return; }
+              const n = Number(raw);
+              if (!Number.isNaN(n)) setQty(l.itemId, n);
+            }}
+            onBlur={(e) => {
+              const raw = e.target.value.replace(",", ".");
+              const n = Number(raw);
+              if (!Number.isNaN(n)) setQty(l.itemId, n);
+            }}
+            className={cn(
+              "h-10 w-28 md:w-32 border rounded-lg p-2 text-center text-base font-medium tabular-nums",
+              "bg-white border-gray-300 text-gray-900 placeholder-gray-500",
+              "dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-400"
+            )}
+          />
+
+          <button
+            type="button"
+            className={cn(
+              "h-10 w-10 flex items-center justify-center border rounded-lg text-base font-medium transition-colors",
+              "border-gray-300 bg-white hover:bg-gray-50 text-gray-700",
+              "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+            )}
+            onClick={() => inc(l.itemId)}
+            aria-label="Increase"
+          >
+            ＋
+          </button>
+        </div>
+
+        {/* 3) Line total — fixed width, no wrap */}
+        <div className="text-right sm:[width:9rem] sm:shrink-0 text-base font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap tabular-nums">
+          Rp {(l.qty * l.price).toLocaleString("id-ID")}
+        </div>
+
+        {/* 4) Actions — fixed width, no wrap */}
+        <div className="text-right sm:[width:7rem] sm:shrink-0">
+          <button
+            type="button"
+            className={cn(
+              "px-3 py-2 border rounded-lg text-sm font-medium transition-colors",
+              "border-red-300 bg-white hover:bg-red-50 text-red-700",
+              "dark:border-red-600 dark:bg-gray-800 dark:text-red-400 dark:hover:bg-red-900/20"
+            )}
+            onClick={() => remove(l.itemId)}
+          >
+            Remove
+          </button>
+        </div>
+      </li>
+    );
+  })}
+</ul>
+
+
           </section>
 
           {/* ORDER DETAILS SECTION */}
@@ -747,7 +778,7 @@ function dec(itemId: string) {
                 type="button"
                 className={cn(
                   "btn btn-secondary btn-md flex-1 sm:flex-none",
-                  "dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                  "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                 )}
                 onClick={onClose}
                 disabled={saving}
@@ -785,7 +816,7 @@ function dec(itemId: string) {
               <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">Choose Customer</div>
               <button
                 type="button"
-                className="text-base underline text-gray-600 dark:text-gray-400"
+                className="text-base underline text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
                 onClick={() => setPickerOpen(false)}
                 disabled={saving}
               >

@@ -134,7 +134,7 @@ export default function EditCustomerModal({
       <ModalFooter>
         <div className="flex items-center justify-end gap-3 w-full">
           <button
-            className="btn btn-secondary btn-md text-base dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            className="btn btn-secondary btn-md text-base dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
             onClick={onClose}
           >
             Cancel

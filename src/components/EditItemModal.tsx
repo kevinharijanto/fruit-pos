@@ -356,7 +356,7 @@ export default function EditItemModal({
               type="button"
               className={cn(
                 "btn btn-secondary btn-md",
-                "dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                "dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
               )}
               onClick={onClose}
               disabled={busy}
