@@ -1,19 +1,31 @@
 // src/app/orders/page.client.tsx
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import EditOrderModal from "@/components/EditOrderModal";
 import Pagination from "@/components/ui/Pagination";
 
-/* =========================
+/* =========================================
    Types
-========================= */
+========================================= */
+type Unit = "PCS" | "KG";
+type PaymentStatus = "unpaid" | "paid" | "refunded";
+type DeliveryStatus = "pending" | "delivered" | "failed";
+
+type OrderItem = {
+  id: string;
+  itemId: string;
+  qty: number;
+  price: number;
+  item: { name: string; unit: Unit };
+};
+
 type Order = {
   id: string;
-  paymentStatus: "unpaid" | "paid" | "refunded";
-  deliveryStatus: "pending" | "delivered" | "failed";
+  paymentStatus: PaymentStatus;
+  deliveryStatus: DeliveryStatus;
   paidAt?: string | null;
   deliveredAt?: string | null;
   total: number;
@@ -23,18 +35,26 @@ type Order = {
   deliveryNote?: string | null;
   paymentType?: "CASH" | "TRANSFER" | "QRIS" | null;
   customer?: { name?: string | null; whatsapp?: string | null; address?: string | null } | null;
-  items: { id: string; itemId: string; qty: number; price: number; item: { name: string; unit: "PCS" | "KG" } }[];
+  items: OrderItem[];
 };
 
-type ItemRef = { id: string; name: string; price: number; stock?: number; unit?: "PCS" | "KG"; stockMode?: "TRACK" | "RESELL" };
+type ItemRef = {
+  id: string;
+  name: string;
+  price: number;
+  stock?: number;
+  unit?: Unit;
+  stockMode?: "TRACK" | "RESELL";
+};
 
 type StatusFilter = "All" | "Unfinished" | "Done";
-
-// badges we show on each order card/row
 type BadgeStatus = "In Progress" | "Delivered but Not Paid" | "Paid but Not Delivered" | "Done";
 
+/* =========================================
+   Constants
+========================================= */
 const STORE_NAME = "Jjenstore";
-
+const STATUS_OPTIONS: StatusFilter[] = ["All", "Unfinished", "Done"];
 const PAYMENT_INSTRUCTION = `Lakukan pembayaran dengan cara
 Transfer ke Rekening
 BCA 8705484640
@@ -43,51 +63,55 @@ An Alfonsa Jeanny
 Mohon lampirkan bukti transfer juga
 🌸 Thank u 🌸`;
 
-function idr(n: number) {
-  return `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
-}
-function pad2(n: number) {
-  return n < 10 ? `0${n}` : `${n}`;
-}
+/* =========================================
+   Helpers
+========================================= */
+const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+const idr = (n: number) => `Rp ${Math.round(n || 0).toLocaleString("id-ID")}`;
+const asNumber = (v: unknown) => {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+};
+const mdSafe = (text: string) => (text || "-").replace(/\*/g, "＊").replace(/_/g, "＿");
 
-// "15 October 2025 18:21"
 function formatDateWithTime(dateStr: string) {
   const d = new Date(dateStr);
-  const day = pad2(d.getDate());
   const months = [
     "January","February","March","April","May","June",
     "July","August","September","October","November","December",
   ];
-  const hours = pad2(d.getHours());
-  const minutes = pad2(d.getMinutes());
-  return `${day} ${months[d.getMonth()]} ${d.getFullYear()} ${hours}:${minutes}`;
+  return `${pad2(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
-
-// "11 October 2025"
 function formatDateDayMonthYear(dateStr: string) {
   const d = new Date(dateStr);
-  const day = pad2(d.getDate());
   const months = [
     "January","February","March","April","May","June",
     "July","August","September","October","November","December",
   ];
-  return `${day} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  return `${pad2(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-// prevent Markdown conflicts inside names by swapping *, _
-function mdSafe(text: string) {
-  return (text || "-").replace(/\*/g, "＊").replace(/_/g, "＿");
+function statusText(o: Order): BadgeStatus {
+  const paid = o.paymentStatus === "paid";
+  const del = o.deliveryStatus === "delivered";
+  if (paid && del) return "Done";
+  if (del && !paid) return "Delivered but Not Paid";
+  if (!del && paid) return "Paid but Not Delivered";
+  return "In Progress";
 }
 
 export function buildWhatsAppMessage(o: {
   createdAt: string;
-  items: { qty: number; price: number; item: { name: string; unit?: "PCS" | "KG" } }[];
+  items: { qty: number; price: number; item: { name: string; unit?: Unit } }[];
   total: number;
   discount: number;
   deliveryFee: number;
 }) {
   const date = formatDateDayMonthYear(o.createdAt);
-
   const subtotal = o.items.reduce((s, li) => s + Math.round(Number(li.qty) * li.price), 0);
 
   const SEP = "--------------------";
@@ -96,13 +120,11 @@ export function buildWhatsAppMessage(o: {
     const name = li.item?.name ? li.item.name : "-";
     const unit = li.item?.unit || "PCS";
     let qty = Number(li.qty);
-    if (unit === "KG") {
-      qty = Math.round(qty * 10) / 10; // 1 decimal place
-    } else {
-      qty = Math.floor(qty); // integer
-    }
+    if (unit === "KG") qty = Math.round(qty * 1000) / 1000;
+    else qty = Math.floor(qty);
+
     rows.push(`*${mdSafe(name)}*`);
-    rows.push(`${qty}${unit.toLowerCase()}x   _${idr(li.price)}_`);
+    rows.push(`${qty}${unit.toLowerCase()} x   _${idr(li.price)}_`);
   }
 
   const parts: string[] = [
@@ -123,21 +145,9 @@ export function buildWhatsAppMessage(o: {
   return parts.join("\n");
 }
 
-const STATUS_OPTIONS: StatusFilter[] = ["All", "Unfinished", "Done"];
-
-// Card/list badge text
-const statusText = (o: Order): BadgeStatus => {
-  const paid = o.paymentStatus === "paid";
-  const del = o.deliveryStatus === "delivered";
-  if (paid && del) return "Done";
-  if (del && !paid) return "Delivered but Not Paid";
-  if (!del && paid) return "Paid but Not Delivered";
-  return "In Progress";
-};
-
-/* =========================
-   Icons + shared classes
-========================= */
+/* =========================================
+   Icons
+========================================= */
 function WhatsAppIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
@@ -151,10 +161,7 @@ function WhatsAppIcon(props: React.SVGProps<SVGSVGElement>) {
 function PencilIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
-      <path
-        fill="currentColor"
-        d="M3 17.25V21h3.75L18.81 8.94l-3.75-3.75L3 17.25Zm17.71-10.04c.39-.39.39-1.02 0-1.41l-2.51-2.51a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 2-1.66Z"
-      />
+      <path fill="currentColor" d="M3 17.25V21h3.75L18.81 8.94l-3.75-3.75L3 17.25Zm17.71-10.04c.39-.39.39-1.02 0-1.41l-2.51-2.51a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 2-1.66Z" />
     </svg>
   );
 }
@@ -179,7 +186,6 @@ function GridIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
-
 function MoreVerticalIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
@@ -188,7 +194,25 @@ function MoreVerticalIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-// Dropdown menu component
+/* =========================================
+   Small UI bits
+========================================= */
+const btnIcon =
+  "inline-flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-lg border shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition-all duration-200";
+
+function StatusBadge({ s }: { s: BadgeStatus }) {
+  const map: Record<BadgeStatus, string> = {
+    "In Progress": "badge-warning",
+    "Delivered but Not Paid": "badge-orange",
+    "Paid but Not Delivered": "badge-blue",
+    "Done": "badge-success",
+  };
+  return <span className={map[s]}>{s}</span>;
+}
+
+/* =========================================
+   Dropdown
+========================================= */
 function DropdownMenu({ children, trigger }: { children: React.ReactNode; trigger: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -199,17 +223,14 @@ function DropdownMenu({ children, trigger }: { children: React.ReactNode; trigge
         setIsOpen(false);
       }
     }
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   return (
     <div className="relative" ref={dropdownRef}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setIsOpen((v) => !v)}
         className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         aria-label="More options"
       >
@@ -217,21 +238,18 @@ function DropdownMenu({ children, trigger }: { children: React.ReactNode; trigge
       </button>
       {isOpen && (
         <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-lg z-10">
-          <div className="py-1">
-            {children}
-          </div>
+          <div className="py-1">{children}</div>
         </div>
       )}
     </div>
   );
 }
-
 function DropdownMenuItem({
   children,
   onClick,
   className = "",
   danger = false,
-  disabled = false
+  disabled = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
@@ -252,35 +270,99 @@ function DropdownMenuItem({
   );
 }
 
-const btnIcon =
-  "inline-flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-lg border shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-1 transition-all duration-200";
+/* =========================================
+   WhatsApp Preview Modal
+   (fix: no clipping of primary button near rounded corner)
+========================================= */
+function WhatsAppPreviewModal({
+  open,
+  phone,
+  text,
+  onChangeText,
+  onClose,
+  onSend,
+}: {
+  open: boolean;
+  phone: string;
+  text: string;
+  onChangeText: (v: string) => void;
+  onClose: () => void;
+  onSend: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50">
+      {/* Backdrop below panel */}
+      <div className="absolute inset-0 bg-black/50 z-0" onClick={onClose} />
+      {/* Dialog */}
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div
+          className="
+            relative z-10
+            w-full max-w-xl
+            rounded-2xl
+            bg-white dark:bg-gray-900
+            border border-gray-200 dark:border-gray-700
+            shadow-xl
+            overflow-visible
+            isolation-isolate
+          "
+        >
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Send to WhatsApp</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              Phone: <span className="font-medium">+{phone || "—"}</span>
+            </p>
+          </div>
 
-/* =========================
-   Small UI helpers
-========================= */
-function StatusBadge({ s }: { s: BadgeStatus }) {
-  const map: Record<BadgeStatus, string> = {
-    "In Progress": "badge-warning",
-    "Delivered but Not Paid": "badge-orange",
-    "Paid but Not Delivered": "badge-blue",
-    "Done": "badge-success",
-  };
-  return <span className={`${map[s]}`}>{s}</span>;
+          <div className="px-5 py-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Message preview</label>
+            <textarea
+              value={text}
+              onChange={(e) => onChangeText(e.target.value)}
+              className="w-full h-48 input resize-y"
+            />
+          </div>
+
+{/* Footer */}
+<div
+  className="
+    px-5 pt-3 pb-5 border-t border-gray-100 dark:border-gray-800
+    flex items-center justify-end gap-3
+    overflow-visible
+  "
+>
+  <button onClick={onClose} className="btn btn-ghost !py-2 !leading-6">
+    Cancel
+  </button>
+
+  {/* ⬇️ Spacer wrapper keeps the button clear of the rounded corners */}
+  <div className="ml-2 mr-2 overflow-visible">
+    <button
+      onClick={onSend}
+      className="
+        btn btn-primary
+        !h-auto !py-2 !leading-6 !whitespace-nowrap !overflow-visible
+        active:translate-y-0
+        relative z-10                      /* draw above any subtle overlays */
+      "
+      style={{ lineHeight: 1.5 }}
+    >
+      Send via WhatsApp
+    </button>
+  </div>
+</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function asNumber(v: any): number {
-  if (typeof v === "number") return v;
-  if (typeof v === "string") {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  return 0;
-}
-
-/* =========================
+/* =========================================
    Page
-========================= */
+========================================= */
 export default function OrdersPage() {
+  // Data & pagination
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({
@@ -292,82 +374,84 @@ export default function OrdersPage() {
     hasPrev: false,
   });
 
+  // Filters / view
   const [filter, setFilter] = useState<StatusFilter>(() => {
     if (typeof window === "undefined") return "Unfinished";
     return (localStorage.getItem("orders.filter") as StatusFilter) || "Unfinished";
   });
-  useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem("orders.filter", filter);
-  }, [filter]);
-
-  const [payFilter, setPayFilter] = useState<"all" | "unpaid" | "paid" | "refunded">("all");
-  const [shipFilter, setShipFilter] = useState<"all" | "pending" | "delivered" | "failed">("all");
-  const [allItems, setAllItems] = useState<ItemRef[]>([]);
+  const [payFilter, setPayFilter] = useState<"all" | PaymentStatus>("all");
+  const [shipFilter, setShipFilter] = useState<"all" | DeliveryStatus>("all");
   const [customerQ, setCustomerQ] = useState("");
   const [view, setView] = useState<"cards" | "list">(() => {
     if (typeof window === "undefined") return "cards";
     return (localStorage.getItem("orders.view") as "cards" | "list") || "cards";
   });
 
-  // Modal state
+  // Items cache
+  const [allItems, setAllItems] = useState<ItemRef[]>([]);
+
+  // Modals
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("edit");
   const [modalOrder, setModalOrder] = useState<any>(null);
+
+  // UI state
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+
+  // WA confirm state
+  const [waModal, setWaModal] = useState<{ open: boolean; phone: string; text: string }>({
+    open: false,
+    phone: "",
+    text: "",
+  });
 
   const params = useSearchParams();
   const waFilter = params.get("wa");
   const openNewParam = params.get("new") === "1";
 
   useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem("orders.filter", filter);
+  }, [filter]);
+  useEffect(() => {
     localStorage.setItem("orders.view", view);
   }, [view]);
 
   async function load(page = 1, search = "") {
     setLoading(true);
-    const params = new URLSearchParams({
-      page: page.toString(),
-      limit: pagination.limit.toString(),
-    });
-    if (search) params.append("search", search);
-    
-    const res = await fetch(`/api/orders?${params}`, { cache: "no-store" });
-    const response = await res.json();
-    
-    if (response.data && response.pagination) {
-      setOrders(Array.isArray(response.data) ? response.data : []);
-      setPagination(response.pagination);
+    const u = new URLSearchParams({ page: String(page), limit: String(pagination.limit) });
+    if (search) u.append("search", search);
+
+    const res = await fetch(`/api/orders?${u}`, { cache: "no-store" });
+    const json = await res.json();
+
+    if (json?.data && json?.pagination) {
+      setOrders(Array.isArray(json.data) ? json.data : []);
+      setPagination(json.pagination);
     } else {
-      // Fallback for backward compatibility
-      setOrders(Array.isArray(response) ? response : []);
+      setOrders(Array.isArray(json) ? json : []);
     }
     setLoading(false);
   }
+
   useEffect(() => {
     load();
     (async () => {
-      const response = await fetch("/api/items", { cache: "no-store" });
-      const json = await response.json();
-      
-      // Handle new paginated format or fallback to old format
-      let arr: any[] = [];
-      if (json.data && Array.isArray(json.data)) {
-        arr = json.data;
-      } else if (Array.isArray(json)) {
-        arr = json;
-      }
-      
+      const res = await fetch("/api/items", { cache: "no-store" });
+      const json = await res.json();
+      const arr: any[] = json?.data && Array.isArray(json.data) ? json.data : Array.isArray(json) ? json : [];
       const mapped: ItemRef[] = arr.map((i) => ({
         id: i.id,
         name: i.name,
         price: asNumber(i.price),
-        stock: asNumber((i as any).stock),
+        stock: asNumber(i?.stock),
         unit: i.unit,
-        stockMode: (i as any).stockMode as "TRACK" | "RESELL" | undefined,
+        stockMode: i?.stockMode as "TRACK" | "RESELL" | undefined,
       }));
       setAllItems(mapped);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -382,7 +466,9 @@ export default function OrdersPage() {
 
   const filtered = useMemo(() => {
     let list = orders;
+
     if (waFilter) list = list.filter((o) => (o.customer?.whatsapp || "").includes(waFilter));
+
     if (customerQ.trim()) {
       const q = customerQ.trim().toLowerCase();
       list = list.filter((o) => {
@@ -392,6 +478,7 @@ export default function OrdersPage() {
         return n.includes(q) || p.includes(q) || a.includes(q);
       });
     }
+
     list = list.filter((o) => {
       const paid = o.paymentStatus === "paid";
       const delivered = o.deliveryStatus === "delivered";
@@ -400,8 +487,10 @@ export default function OrdersPage() {
       if (filter === "Done") return paid && delivered;
       return true;
     });
+
     if (payFilter !== "all") list = list.filter((o) => o.paymentStatus === payFilter);
     if (shipFilter !== "all") list = list.filter((o) => o.deliveryStatus === shipFilter);
+
     return list;
   }, [orders, filter, waFilter, payFilter, shipFilter, customerQ]);
 
@@ -444,12 +533,10 @@ export default function OrdersPage() {
     setModalOpen(true);
   }
 
-  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
-
   async function onDelete(id: string) {
-    if (deletingOrderId === id) return; // Prevent multiple calls
+    if (deletingOrderId === id) return;
     if (!confirm("Delete this order? Stock will be returned.")) return;
-    
+
     try {
       setDeletingOrderId(id);
       const res = await fetch(`/api/orders/${id}`, { method: "DELETE" });
@@ -459,8 +546,8 @@ export default function OrdersPage() {
         return;
       }
       await load(pagination.page, customerQ);
-    } catch (error) {
-      console.error("Error deleting order:", error);
+    } catch (err) {
+      console.error("Error deleting order:", err);
       alert("Failed to delete order");
     } finally {
       setDeletingOrderId(null);
@@ -470,27 +557,21 @@ export default function OrdersPage() {
   function handlePageChange(newPage: number) {
     load(newPage, customerQ);
   }
-
   function handleSearch() {
+    load(1, customerQ);
+  }
+  function handleLimitChange(newLimit: number) {
+    setPagination((prev) => ({ ...prev, limit: newLimit }));
     load(1, customerQ);
   }
 
   function toggleExpanded(orderId: string) {
-    setExpandedItems(prev =>
-      prev.includes(orderId)
-        ? prev.filter(id => id !== orderId)
-        : [...prev, orderId]
-    );
+    setExpandedItems((prev) => (prev.includes(orderId) ? prev.filter((id) => id !== orderId) : [...prev, orderId]));
   }
 
-  function handleLimitChange(newLimit: number) {
-    setPagination(prev => ({ ...prev, limit: newLimit }));
-    load(1, customerQ);
-  }
+  async function handleQuickStatusUpdate(orderId: string, paymentStatus: PaymentStatus, deliveryStatus: DeliveryStatus) {
+    if (updatingStatus === orderId) return;
 
-  async function handleQuickStatusUpdate(orderId: string, paymentStatus: string, deliveryStatus: string) {
-    if (updatingStatus === orderId) return; // Prevent multiple calls
-    
     try {
       setUpdatingStatus(orderId);
       const res = await fetch(`/api/orders/${orderId}/mark`, {
@@ -498,26 +579,51 @@ export default function OrdersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentStatus, deliveryStatus }),
       });
-      
       if (!res.ok) {
         const error = await res.text();
         alert("Failed to update status: " + error);
         return;
       }
-      
-      // Refresh the orders list
       await load(pagination.page, customerQ);
-    } catch (error) {
-      console.error("Error updating order status:", error);
+    } catch (err) {
+      console.error("Error updating order status:", err);
       alert("Failed to update status");
     } finally {
       setUpdatingStatus(null);
     }
   }
 
+  // WhatsApp confirm flow
+  function openWhatsAppConfirm(o: Order) {
+    const phone = (o.customer?.whatsapp || "").replace(/[^\d]/g, "");
+    setWaModal({
+      open: true,
+      phone,
+      text: buildWhatsAppMessage({
+        createdAt: o.createdAt,
+        items: o.items.map((i) => ({ qty: i.qty, price: i.price, item: { name: i.item.name, unit: i.item.unit } })),
+        total: o.total,
+        discount: o.discount,
+        deliveryFee: o.deliveryFee,
+      }),
+    });
+  }
+  function sendWhatsAppNow() {
+    if (!waModal.phone) {
+      alert("No WhatsApp number for this customer.");
+      return;
+    }
+    const url = `https://wa.me/${waModal.phone}?text=${encodeURIComponent(waModal.text)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setWaModal({ open: false, phone: "", text: "" });
+  }
+
+  /* =========================================
+     Render
+  ========================================= */
   return (
     <div className="space-y-6">
-      {/* Header / Toolbar */}
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Orders</h1>
@@ -525,13 +631,9 @@ export default function OrdersPage() {
         </div>
 
         {waFilter && (
-          <Link
-            href="/orders"
-            className="badge-primary inline-flex items-center gap-1"
-            title="Clear WhatsApp filter"
-          >
+          <Link href="/orders" className="badge-primary inline-flex items-center gap-1" title="Clear WhatsApp filter">
             WA: +{waFilter}
-            <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={2}>
               <path d="M6 6l12 12M18 6l-12 12" />
             </svg>
           </Link>
@@ -549,17 +651,17 @@ export default function OrdersPage() {
                 placeholder="Filter customer…"
                 value={customerQ}
                 onChange={(e) => setCustomerQ(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 title="Filter by name / phone / address"
               />
               <button
                 onClick={handleSearch}
-                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 title="Search"
               >
-                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="11" cy="11" r="8"/>
-                  <path d="m21 21-4.35-4.35"/>
+                <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.35-4.35" />
                 </svg>
               </button>
             </div>
@@ -568,7 +670,11 @@ export default function OrdersPage() {
           {/* View toggle */}
           <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-gray-600 dark:bg-gray-800">
             <button
-              className={`px-3 py-2 text-sm rounded-md ${view === "cards" ? "bg-primary-600 text-white" : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"}`}
+              className={`px-3 py-2 text-sm rounded-md ${
+                view === "cards"
+                  ? "bg-primary-600 text-white"
+                  : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+              }`}
               onClick={() => setView("cards")}
               title="Card view"
               aria-label="Card view"
@@ -576,7 +682,11 @@ export default function OrdersPage() {
               <GridIcon className="w-4 h-4" />
             </button>
             <button
-              className={`px-3 py-2 text-sm rounded-md ${view === "list" ? "bg-primary-600 text-white" : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"}`}
+              className={`px-3 py-2 text-sm rounded-md ${
+                view === "list"
+                  ? "bg-primary-600 text-white"
+                  : "text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100"
+              }`}
               onClick={() => setView("list")}
               title="List view"
               aria-label="List view"
@@ -585,13 +695,8 @@ export default function OrdersPage() {
             </button>
           </div>
 
-          {/* Status filter */}
-          <select
-            className="input w-40"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as StatusFilter)}
-            title="Overall status"
-          >
+          {/* Overall status */}
+          <select className="input w-40" value={filter} onChange={(e) => setFilter(e.target.value as StatusFilter)} title="Overall status">
             {STATUS_OPTIONS.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -600,12 +705,7 @@ export default function OrdersPage() {
           </select>
 
           {/* Payment filter */}
-          <select
-            className="input w-32"
-            value={payFilter}
-            onChange={(e) => setPayFilter(e.target.value as any)}
-            title="Payment status"
-          >
+          <select className="input w-32" value={payFilter} onChange={(e) => setPayFilter(e.target.value as any)} title="Payment status">
             <option value="all">Pay: All</option>
             <option value="unpaid">Unpaid</option>
             <option value="paid">Paid</option>
@@ -613,24 +713,16 @@ export default function OrdersPage() {
           </select>
 
           {/* Delivery filter */}
-          <select
-            className="input w-32"
-            value={shipFilter}
-            onChange={(e) => setShipFilter(e.target.value as any)}
-            title="Delivery status"
-          >
+          <select className="input w-32" value={shipFilter} onChange={(e) => setShipFilter(e.target.value as any)} title="Delivery status">
             <option value="all">Delivery: All</option>
             <option value="pending">Pending</option>
             <option value="delivered">Delivered</option>
             <option value="failed">Failed</option>
           </select>
 
-          {/* New order button */}
-          <button
-            onClick={openCreate}
-            className="btn btn-primary btn-md"
-          >
-            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+          {/* New order */}
+          <button onClick={openCreate} className="btn btn-primary btn-md">
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
               <path d="M12 5v14M5 12h14" />
             </svg>
             New Order
@@ -643,8 +735,8 @@ export default function OrdersPage() {
         <div className="text-center py-12">
           <div className="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
             <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
             Loading orders…
           </div>
@@ -652,43 +744,31 @@ export default function OrdersPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-12">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 mb-4">
-            <svg viewBox="0 0 24 24" className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            <svg viewBox="0 0 24 24" className="w-8 h-8 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
           </div>
           <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">No orders found</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">Try adjusting your filters or create a new order.</p>
         </div>
       ) : view === "cards" ? (
-        /* =============== CARD VIEW =============== */
+        /* Card view */
         <ul className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filtered.map((o) => {
             const s = statusText(o);
             const formattedDateTime = formatDateWithTime(o.createdAt);
-            const itemCount = o.items.reduce((n, it) => n + it.qty, 0);
-            // Fix decimal places - show integer for PCS, 1 decimal for KG
-            const itemCountDisplay = o.items.reduce((sum, item) => {
-              const unit = item.item.unit || "PCS";
-              if (unit === "KG") {
-                return sum + Number(item.qty);
-              } else {
-                return sum + Math.floor(Number(item.qty));
-              }
-            }, 0);
-            
+
             const itemsPreview = o.items
               .slice(0, 3)
               .map((li) => {
                 const unit = li.item.unit || "PCS";
                 let qty = Number(li.qty);
-                if (unit === "KG") {
-                  qty = Math.round(qty * 10) / 10; // 1 decimal place
-                } else {
-                  qty = Math.floor(qty); // integer
-                }
+                if (unit === "KG") qty = Math.round(qty * 10) / 10;
+                else qty = Math.floor(qty);
                 return `${li.item.name}×${qty}`;
               })
               .join(", ");
+
             return (
               <li key={o.id} className="card card-hover h-full flex flex-col">
                 <div className="card-padding flex-1 flex flex-col">
@@ -698,9 +778,7 @@ export default function OrdersPage() {
                       <div className="font-semibold text-gray-900 dark:text-gray-100 truncate text-lg">
                         {o.customer?.name ?? "Walk-in"}
                       </div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        {formattedDateTime}
-                      </div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{formattedDateTime}</div>
                     </div>
                     <StatusBadge s={s} />
                   </div>
@@ -712,75 +790,72 @@ export default function OrdersPage() {
                         <span className="font-medium">Note:</span> {o.deliveryNote}
                       </div>
                     )}
-                    
+
                     {o.customer?.address && (
                       <div className="text-sm text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
                         <div className="flex items-start gap-2">
-                          <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
-                            <circle cx="12" cy="10" r="3"/>
+                          <svg viewBox="0 0 24 24" className="w-4 h-4 text-gray-400 dark:text-gray-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                            <circle cx="12" cy="10" r="3" />
                           </svg>
                           <span className="break-words font-medium">{o.customer.address}</span>
                         </div>
                       </div>
                     )}
 
-                    {/* Items section - hidden by default, toggle to show */}
-                    <div className="text-sm text-gray-600 dark:text-gray-300">
-                      {o.items.length > 0 && (
-                        <div className="space-y-2">
-                          {!expandedItems.includes(o.id) && (
-                            <button
-                              onClick={() => toggleExpanded(o.id)}
-                              className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 text-sm font-medium flex items-center gap-1"
-                            >
-                              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M9 5l7 7-7 7"/>
-                              </svg>
-                              Show Items ({o.items.length})
-                            </button>
-                          )}
-                          {expandedItems.includes(o.id) && (
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="font-medium text-gray-700 dark:text-gray-300">Items Ordered</span>
-                                <button
-                                  onClick={() => toggleExpanded(o.id)}
-                                  className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 text-sm font-medium flex items-center gap-1"
-                                >
-                                  <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M19 9l-7 7-7-7"/>
-                                  </svg>
-                                  Hide
-                                </button>
-                              </div>
-                              <div className="space-y-1 max-h-32 overflow-y-auto">
-                                {o.items.map((li) => {
-                                  const unit = li.item.unit || "PCS";
-                                  let qty = Number(li.qty);
-                                  if (unit === "KG") {
-                                    qty = Math.round(qty * 10) / 10; // 1 decimal place
-                                  } else {
-                                    qty = Math.floor(qty); // integer
-                                  }
-                                  return (
-                                    <div key={li.id} className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                                      {li.item.name}×{qty}
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                    {/* Items section with toggle */}
+                    {!!o.items.length && (
+                      <div className="text-sm text-gray-600 dark:text-gray-300">
+                        {!expandedItems.includes(o.id) ? (
+                          <button
+                            onClick={() => toggleExpanded(o.id)}
+                            className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 text-sm font-medium flex items-center gap-1"
+                          >
+                            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
+                              <path d="M9 5l7 7-7 7" />
+                            </svg>
+                            Show Items ({o.items.length})
+                          </button>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-gray-700 dark:text-gray-300">Items Ordered</span>
+                              <button
+                                onClick={() => toggleExpanded(o.id)}
+                                className="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 text-sm font-medium flex items-center gap-1"
+                              >
+                                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
+                                  <path d="M19 9l-7 7-7-7" />
+                                </svg>
+                                Hide
+                              </button>
                             </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {o.items.map((li) => {
+                                const unit = li.item.unit || "PCS";
+                                let qty = Number(li.qty);
+                                if (unit === "KG") qty = Math.round(qty * 10) / 10;
+                                else qty = Math.floor(qty);
+                                return (
+                                  <div key={li.id} className="text-sm text-gray-600 dark:text-gray-300 truncate">
+                                    {li.item.name}×{qty}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {!!itemsPreview && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">Preview: {itemsPreview}</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Bottom row - pinned to bottom */}
+                  {/* Bottom row */}
                   <div className="mt-auto pt-4 border-t border-gray-100 dark:border-gray-700">
                     <div className="flex flex-col gap-3">
-                      {/* Status Actions - more prominent now */}
+                      {/* Quick status */}
                       <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
                         {o.paymentStatus !== "paid" && (
                           <button
@@ -792,8 +867,8 @@ export default function OrdersPage() {
                             {updatingStatus === o.id ? (
                               <span className="flex items-center gap-2">
                                 <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                                 </svg>
                                 Updating…
                               </span>
@@ -812,8 +887,8 @@ export default function OrdersPage() {
                             {updatingStatus === o.id ? (
                               <span className="flex items-center gap-2">
                                 <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                                 </svg>
                                 Updating…
                               </span>
@@ -828,30 +903,16 @@ export default function OrdersPage() {
                           </span>
                         )}
                       </div>
-                      
-                      {/* Price and Actions */}
+
+                      {/* Price & menu */}
                       <div className="flex items-center justify-between">
-                        <div className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                          Rp {o.total.toLocaleString("id-ID")}
-                        </div>
-                        
-                        {/* Three-dot menu */}
-                        <DropdownMenu
-                          trigger={
-                            <MoreVerticalIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-                          }
-                        >
+                        <div className="text-lg font-bold text-gray-900 dark:text-gray-100">Rp {o.total.toLocaleString("id-ID")}</div>
+
+                        <DropdownMenu trigger={<MoreVerticalIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" />}>
                           {o.customer?.whatsapp && (
-                            <DropdownMenuItem onClick={() => {}}>
-                              <a
-                                href={`https://wa.me/${o.customer.whatsapp}?text=${encodeURIComponent(buildWhatsAppMessage(o))}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-2 w-full"
-                              >
-                                <WhatsAppIcon className="w-4 h-4" />
-                                WhatsApp
-                              </a>
+                            <DropdownMenuItem onClick={() => openWhatsAppConfirm(o)}>
+                              <WhatsAppIcon className="w-4 h-4" />
+                              WhatsApp
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem onClick={() => openEdit(o)}>
@@ -866,17 +927,17 @@ export default function OrdersPage() {
                             {deletingOrderId === o.id ? (
                               <span className="flex items-center gap-2">
                                 <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                                 </svg>
                                 Deleting…
                               </span>
-            ) : (
-              <>
-                <TrashIcon className="w-4 h-4" />
-                Delete Order
-              </>
-            )}
+                            ) : (
+                              <>
+                                <TrashIcon className="w-4 h-4" />
+                                Delete Order
+                              </>
+                            )}
                           </DropdownMenuItem>
                         </DropdownMenu>
                       </div>
@@ -888,7 +949,7 @@ export default function OrdersPage() {
           })}
         </ul>
       ) : (
-        /* =============== LIST/TABLE VIEW =============== */
+        /* List / table view */
         <div className="card p-0 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="table">
@@ -906,14 +967,13 @@ export default function OrdersPage() {
                 {filtered.map((o) => {
                   const s = statusText(o);
                   const formattedDateTime = formatDateWithTime(o.createdAt);
+
                   const itemCountDisplay = o.items.reduce((sum, item) => {
                     const unit = item.item.unit || "PCS";
-                    if (unit === "KG") {
-                      return sum + Number(item.qty);
-                    } else {
-                      return sum + Math.floor(Number(item.qty));
-                    }
+                    if (unit === "KG") return sum + Number(item.qty);
+                    return sum + Math.floor(Number(item.qty));
                   }, 0);
+
                   return (
                     <tr key={o.id} className="table-row">
                       <td className="table-cell">
@@ -923,17 +983,19 @@ export default function OrdersPage() {
                       </td>
                       <td className="table-cell">
                         <div className="max-w-xs">
-                          <div className="font-medium text-gray-900 dark:text-gray-100">{o.customer?.name ?? "Walk-in"}</div>
+                          <div className="font-medium text-gray-900 dark:text-gray-100">
+                            {o.customer?.name ?? "Walk-in"}
+                          </div>
                           {o.customer?.address && (
                             <div className="text-sm text-gray-600 dark:text-gray-400 truncate" title={o.customer.address}>
                               📍 {o.customer.address}
                             </div>
                           )}
-                           {o.deliveryNote && (
-                             <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1" title={o.deliveryNote}>
-                               Note: {o.deliveryNote}
-                             </div>
-                           )}
+                          {o.deliveryNote && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1" title={o.deliveryNote}>
+                              Note: {o.deliveryNote}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="table-cell">
@@ -950,16 +1012,15 @@ export default function OrdersPage() {
                       <td className="table-cell">
                         <div className="flex items-center gap-2 justify-end">
                           {o.customer?.whatsapp && (
-                            <a
+                            <button
+                              type="button"
                               className={`${btnIcon} text-white bg-green-600 hover:bg-green-700 focus:ring-green-500 border-transparent`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              href={`https://wa.me/${o.customer.whatsapp}?text=${encodeURIComponent(buildWhatsAppMessage(o))}`}
+                              onClick={() => openWhatsAppConfirm(o)}
                               title="WhatsApp"
                               aria-label="WhatsApp"
                             >
                               <WhatsAppIcon className="w-4 h-4" />
-                            </a>
+                            </button>
                           )}
                           <button
                             className={`${btnIcon} text-primary-600 bg-white border-primary-200 hover:bg-primary-50 focus:ring-primary-500`}
@@ -979,8 +1040,8 @@ export default function OrdersPage() {
                           >
                             {deletingOrderId === o.id ? (
                               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                               </svg>
                             ) : (
                               <TrashIcon className="w-4 h-4" />
@@ -1013,7 +1074,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* CREATE/EDIT MODAL */}
+      {/* Create/Edit modal */}
       {modalOpen && modalOrder && (
         <EditOrderModal
           mode={modalMode}
@@ -1027,6 +1088,16 @@ export default function OrdersPage() {
           }}
         />
       )}
+
+      {/* WhatsApp preview modal */}
+      <WhatsAppPreviewModal
+        open={waModal.open}
+        phone={waModal.phone}
+        text={waModal.text}
+        onChangeText={(v) => setWaModal((m) => ({ ...m, text: v }))}
+        onClose={() => setWaModal({ open: false, phone: "", text: "" })}
+        onSend={sendWhatsAppNow}
+      />
     </div>
   );
 }
