@@ -453,7 +453,7 @@ export default function EditSellerOrderModal({
           <div className="flex gap-2 sm:gap-3 w-full sm:w-auto">
             <button
               type="button"
-              className="btn btn-secondary btn-md flex-1 sm:flex-none dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+              className="btn btn-secondary btn-md flex-1 sm:flex-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
               onClick={onClose}
               disabled={isLoading}
             >
@@ -521,7 +521,7 @@ export default function EditSellerOrderModal({
                   setShowItemSelector(false);
                   setItemSearch("");
                 }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 Cancel
               </button>
@@ -566,7 +566,7 @@ export default function EditSellerOrderModal({
                   setShowSellerSelector(false);
                   setSellerSearch("");
                 }}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
               >
                 Cancel
               </button>

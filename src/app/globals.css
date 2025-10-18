@@ -255,7 +255,7 @@ body.modal-open [data-fab] {
   }
 
   .btn-secondary {
-    @apply btn bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-primary-500 shadow-sm;
+    @apply btn bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-primary-500 shadow-sm dark:bg-gray-800 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700;
   }
 
   .btn-ghost {
