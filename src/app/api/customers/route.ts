@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
     take: limit,
   });
 
-  // Cache for 2 minutes - customer data changes moderately
+  // Disable caching to ensure fresh data
   const response = NextResponse.json({
     data: list,
     pagination: {
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
     }
   });
   
-  response.headers.set('Cache-Control', 'public, max-age=120, s-maxage=120');
+  response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   return response;
 }
 

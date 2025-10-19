@@ -11,6 +11,7 @@ type Item = {
   id: string;
   name: string;
   price: number;
+  costPrice: number;
   stock: number;
   unit?: "PCS" | "KG";
   // category might be a string or an object with a name field depending on source
@@ -163,7 +164,7 @@ export default function EditSellerOrderModal({
       {
         itemId: item.id,
         quantity: item.unit === "KG" ? 0.1 : 1,
-        price: item.price,
+        price: item.costPrice, // Use cost price for seller orders
         itemName: item.name,
         unit: (item as any).unit || "PCS",
       },
@@ -503,7 +504,7 @@ export default function EditSellerOrderModal({
                   >
                     <span className="truncate font-medium text-gray-900 dark:text-white">{item.name}</span>
                     <span className="text-xs text-gray-600 dark:text-gray-400">
-                      Rp {Number(item.price || 0).toLocaleString("id-ID")} • stock {Number(item.stock || 0)}
+                      Cost: Rp {Number(item.costPrice || 0).toLocaleString("id-ID")} • stock {Number(item.stock || 0)}
                       {item.unit ? ` • ${String(item.unit).toLowerCase()}` : ""}
                       {getCategoryName(item) ? ` • ${getCategoryName(item)}` : ""}
                     </span>

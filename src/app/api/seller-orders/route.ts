@@ -150,7 +150,7 @@ export async function GET(req: NextRequest) {
         hasPrev: page > 1,
       },
     }, {
-      headers: { 'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=60' }
+      headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
     });
   } catch (e: any) {
     console.error("GET /api/seller-orders failed:", e);
@@ -192,17 +192,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No items." }, { status: 400 });
     }
 
-    // 1) Load item catalog (for unit & price snapshot)
+    // 1) Load item catalog (for unit & cost price snapshot)
     const itemIds = items.map((l: any) => String(l.itemId)).filter(Boolean);
     const catalog = await prisma.item.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, unit: true, price: true },
+      select: { id: true, unit: true, costPrice: true },
     });
     const byId = new Map(
-      catalog.map((i: any) => [i.id, { unit: (i.unit as "PCS" | "KG") || "PCS", price: i.price }]),
+      catalog.map((i: any) => [i.id, { unit: (i.unit as "PCS" | "KG") || "PCS", costPrice: i.costPrice }]),
     );
 
-    // 2) Build order lines with normalized qty (PCS int, KG one decimal), and snapshot price
+    // 2) Build order lines with normalized qty (PCS int, KG one decimal), and snapshot cost price
     const lines = items.map((l: any) => {
       const meta = byId.get(String(l.itemId));
       if (!meta) throw new Error("Invalid item");
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
       return {
         itemId: String(l.itemId),
         qty,
-        price: (meta as any).price, // snapshot current price
+        price: (meta as any).costPrice, // snapshot current cost price (what we pay to seller)
       };
     });
 

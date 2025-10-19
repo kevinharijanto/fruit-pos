@@ -33,9 +33,9 @@ function qtyForUnit(rawQty: unknown, unit: "PCS" | "KG"): number {
 --------------------------- */
 export async function GET(req: NextRequest) {
   try {
-    // Add cache control for slightly stale data (30 seconds for orders, 5 minutes for items)
+    // Disable caching to ensure fresh data
     const response = NextResponse.next();
-    response.headers.set('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=60');
+    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     const url = new URL(req.url);
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1"));
     const limit = Math.min(100, Math.max(10, parseInt(url.searchParams.get("limit") || "25")));

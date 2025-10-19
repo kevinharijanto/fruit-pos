@@ -48,10 +48,12 @@ export async function GET(req: NextRequest) {
 
     // For backward compatibility, return array directly if no pagination params
     if (!url.searchParams.has("page") && !url.searchParams.has("limit")) {
-      return NextResponse.json(data);
+      const response = NextResponse.json(data);
+      response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return response;
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       data,
       pagination: {
         page,
@@ -62,6 +64,8 @@ export async function GET(req: NextRequest) {
         hasPrev: page > 1,
       },
     });
+    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    return response;
   } catch (e: any) {
     console.error("GET /api/sellers failed:", e);
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
