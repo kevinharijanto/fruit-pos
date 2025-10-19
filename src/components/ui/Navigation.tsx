@@ -20,7 +20,7 @@ interface NavigationProps {
   className?: string;
 }
 
-function NavIcon({ name }: { name: "home" | "orders" | "seller-orders" | "sellers" | "items" | "customers" }) {
+function NavIcon({ name }: { name: "home" | "orders" | "seller-orders" | "sellers" | "items" | "customers" | "accounting" }) {
   const cls = "w-5 h-5";
   switch (name) {
     case "home":
@@ -74,11 +74,17 @@ function NavIcon({ name }: { name: "home" | "orders" | "seller-orders" | "seller
           <path d="m23 21-3.5-3.5M21 16v4" />
         </svg>
       );
+    case "accounting":
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={cls} stroke="currentColor" strokeWidth="2">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+        </svg>
+      );
   }
 }
 
-export function NavigationItems({ items, onItemClick }: { 
-  items: NavigationItem[]; 
+export function NavigationItems({ items, onItemClick }: {
+  items: NavigationItem[];
   onItemClick?: () => void;
 }) {
   const pathname = usePathname();
@@ -86,6 +92,15 @@ export function NavigationItems({ items, onItemClick }: {
   return (
     <nav className="flex flex-col gap-1 px-3 py-4">
       {items.map((item) => {
+        // Handle separator item
+        if (item.href === "#separator") {
+          return (
+            <div key="separator" className="my-2">
+              {item.icon}
+            </div>
+          );
+        }
+
         const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
         
         return (
@@ -166,6 +181,15 @@ export default function Navigation({
         <div className="flex-1 overflow-y-auto py-4">
           <nav className="flex flex-col gap-2 px-2">
             {items.map((item) => {
+              // Handle separator item
+              if (item.href === "#separator") {
+                return (
+                  <div key="separator" className="my-2">
+                    <div className="border-t border-gray-200 dark:border-gray-700"></div>
+                  </div>
+                );
+              }
+
               const pathname = usePathname();
               const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
               
@@ -345,6 +369,21 @@ export const defaultNavItems: NavigationItem[] = [
     icon: <NavIcon name="orders" />,
   },
   {
+    href: "/items",
+    label: "Items",
+    icon: <NavIcon name="items" />,
+  },
+  {
+    href: "/customers",
+    label: "Customers",
+    icon: <NavIcon name="customers" />,
+  },
+  {
+    href: "#separator",
+    label: "",
+    icon: <div className="border-t border-gray-200 dark:border-gray-700 my-2"></div>,
+  },
+  {
     href: "/seller-orders",
     label: "Seller Orders",
     icon: <NavIcon name="seller-orders" />,
@@ -355,14 +394,9 @@ export const defaultNavItems: NavigationItem[] = [
     icon: <NavIcon name="sellers" />,
   },
   {
-    href: "/items",
-    label: "Items",
-    icon: <NavIcon name="items" />,
-  },
-  {
-    href: "/customers",
-    label: "Customers",
-    icon: <NavIcon name="customers" />,
+    href: "/accounting",
+    label: "Accounting",
+    icon: <NavIcon name="accounting" />,
   },
 ];
 
