@@ -171,6 +171,7 @@ export default function ItemsPage() {
       alert("Failed to delete: " + t);
       return;
     }
+    // Reload the data to refresh the table
     await load(currentPage, limit, query, catFilter);
   }
 
@@ -260,7 +261,8 @@ export default function ItemsPage() {
         <>
           {/* Table View */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="overflow-x-auto">
+            {/* Desktop Table View */}
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50 dark:bg-gray-900/50">
                   <tr>
@@ -342,7 +344,7 @@ export default function ItemsPage() {
                                   price: it.price,
                                   costPrice: typeof it.costPrice === "number" ? it.costPrice : 0,
                                   stock: asNumber(it.stock),
-                                  unitType: it.unit,            // map for modal defaults
+                                  unit: it.unit,                // use correct field name
                                   stockMode: it.stockMode,
                                   categoryId: it.category?.id,
                                   category: it.category || null,
@@ -371,6 +373,93 @@ export default function ItemsPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="lg:hidden divide-y divide-gray-200 dark:divide-gray-700">
+              {items.map((it) => {
+                const unitLabel = it.unit === "KG" ? "kg" : "pcs";
+                const tracked = it.stockMode === "TRACK";
+                return (
+                  <div key={it.id} className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {it.name}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          {tracked ? (
+                            <span className="badge-success">Tracked</span>
+                          ) : (
+                            <span className="badge-warning">Resell</span>
+                          )}
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {it.unit === "KG" ? "per KG" : "per PCS"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          className={`${btnIcon} text-primary-600 bg-white border-primary-200 hover:bg-primary-50 focus:ring-primary-500 dark:bg-gray-800 dark:border-primary-800 dark:hover:bg-primary-900/20`}
+                          onClick={() => {
+                            setCurrent({
+                              id: it.id,
+                              name: it.name,
+                              price: it.price,
+                              costPrice: typeof it.costPrice === "number" ? it.costPrice : 0,
+                              stock: asNumber(it.stock),
+                              unit: it.unit,
+                              stockMode: it.stockMode,
+                              categoryId: it.category?.id,
+                              category: it.category || null,
+                            });
+                            setMode("edit");
+                            setOpen(true);
+                          }}
+                          title="Edit"
+                          aria-label="Edit"
+                        >
+                          <PencilIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                          className={`${btnIcon} text-red-600 border-red-200 hover:bg-red-50 focus:ring-red-500`}
+                          onClick={() => onDelete(it.id)}
+                          title="Delete"
+                          aria-label="Delete"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Category:</span>
+                        <span className="ml-2 text-gray-900 dark:text-gray-100">
+                          {it.category?.name || "—"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Price:</span>
+                        <span className="ml-2 text-gray-900 dark:text-gray-100">
+                          Rp {fmtIDR(it.price)}/{unitLabel}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Stock:</span>
+                        <span className="ml-2 text-gray-900 dark:text-gray-100">
+                          {tracked ? `${fmtQty(it.stock, it.unit)} ${unitLabel}` : "Not tracked"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Cost:</span>
+                        <span className="ml-2 text-gray-900 dark:text-gray-100">
+                          Rp {fmtIDR(it.costPrice)}/{unitLabel}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
