@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
   if (q) {
     // When searching, return all results without pagination info
     const response = NextResponse.json(out);
-    response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=300');
+    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     return response;
   } else {
     // When browsing normally, return paginated results
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
         hasPrev: page > 1
       }
     });
-    response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=300');
+    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     return response;
   }
 }

@@ -103,7 +103,7 @@ export default function ItemsPage() {
 
   const params = useSearchParams();
 
-  async function load(page = currentPage, limitValue = limit, searchQuery = query, categoryFilter = catFilter) {
+  async function load(page = currentPage, limitValue = limit, searchQuery = query, categoryFilter = catFilter, forceRefresh = false) {
     setLoading(true);
     const searchParams = new URLSearchParams({
       page: page.toString(),
@@ -112,7 +112,10 @@ export default function ItemsPage() {
       ...(categoryFilter && categoryFilter !== "ALL" && { cat: categoryFilter })
     });
     
-    const res = await fetch(`/api/items?${searchParams}`, { cache: "no-store" });
+    // Force cache busting if needed
+    const cacheOptions = forceRefresh ? { cache: "no-store" as RequestCache } : { cache: "no-store" as RequestCache };
+    
+    const res = await fetch(`/api/items?${searchParams}`, cacheOptions);
     const data = await res.json();
     
     if (Array.isArray(data)) {
@@ -171,8 +174,8 @@ export default function ItemsPage() {
       alert("Failed to delete: " + t);
       return;
     }
-    // Reload the data to refresh the table
-    await load(currentPage, limit, query, catFilter);
+    // Force refresh the data to ensure the table updates
+    await load(currentPage, limit, query, catFilter, true);
   }
 
   return (
@@ -495,7 +498,8 @@ export default function ItemsPage() {
           onSaved={async () => {
             setOpen(false);
             setCurrent(undefined);
-            await load(currentPage, limit, query, catFilter);
+            // Force refresh to ensure latest data is shown
+            await load(currentPage, limit, query, catFilter, true);
           }}
         />
       )}
