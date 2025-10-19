@@ -515,7 +515,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI grid (stacks 1/2/4 cols responsively) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-4">
         {isLoading ? (
           <>
             <MetricSkeleton />
@@ -526,7 +526,6 @@ export default function DashboardPage() {
         ) : (
           <>
             <Metric title="Total Orders" value={String(totalOrders)} />
-            <Metric title="Unpaid Orders" value={String(filteredUnpaid.length)} />
             <Metric title="Revenue (Omzet)" value={moneyIDR(omzet)} />
             <Metric title="Seller Delivery Fees" value={moneyIDR(sellerDeliveryFeeTotal)} />
             <Metric title="Net Profit" value={moneyIDR(netProfit - sellerDeliveryFeeTotal)} />
@@ -534,44 +533,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Buckets */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Bucket title="Unpaid Orders">
-          {isLoading ? (
-            <div className="space-y-3">
-              <LoadingSkeleton />
-              <LoadingSkeleton />
-              <LoadingSkeleton />
-            </div>
-          ) : filteredUnpaid.length ? (
-            filteredUnpaid.map((o) => (
-              <OrderRow key={`unpaid-${o.id}`} o={o} right={<span className="font-semibold">{moneyIDR(o.total)}</span>}>
-                <Pill>unpaid</Pill>
-              </OrderRow>
-            ))
-          ) : (
-            <Empty text="Nothing pending" />
-          )}
-        </Bucket>
-
-        <Bucket title="Undelivered Orders">
-          {isLoading ? (
-            <div className="space-y-3">
-              <LoadingSkeleton />
-              <LoadingSkeleton />
-              <LoadingSkeleton />
-            </div>
-          ) : filteredUndelivered.length ? (
-            filteredUndelivered.map((o) => (
-              <OrderRow key={`undelivered-${o.id}`} o={o} right={<span className="font-semibold">{moneyIDR(o.total)}</span>}>
-                <Pill>undelivered</Pill>
-              </OrderRow>
-            ))
-          ) : (
-            <Empty text="All delivered!" />
-          )}
-        </Bucket>
-      </div>
 
       {/* Rankings */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
